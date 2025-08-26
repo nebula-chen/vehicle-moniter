@@ -1,0 +1,17 @@
+Name: vehicle-api
+Host: 0.0.0.0
+Port: 8666
+TCPPort: ":6000"
+InfluxDBConfig:
+  Host: "influxdb"
+  Port: "8086"
+  User: admin
+  Password: "12345678"
+  Token: tK0BKAx693FyWtedXb7LCH6GSQXQs6cof-niW3lDoABVcir7BRVHSwXUDFEjuqlZpVS8PKINXdDscLhiyfg==
+  Bucket: drone_data
+  Org: sysu
+  RetentionPolicy: autogen
+  Precision: s
+  Timeout: 5s
+  BatchSize: 100
+  FlushInterval: 5

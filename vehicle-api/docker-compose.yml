@@ -1,0 +1,20 @@
+# version: '3.8'
+
+services:
+  vehicle-api:
+    build: .
+    container_name: vehicle-api
+    ports:
+      - "8666:8666"  # 映射主机的8666端口到容器的8666端口
+      - "6000:6000/tcp"  # 映射主机的6000端口到容器的6000端口（TCP）
+    volumes:
+      - ./log:/app/log  # 数据持久化目录
+    environment:
+      - TZ=Asia/Shanghai   # 可选：设置时区
+    networks:
+      - my-network
+    restart: always
+
+networks:
+  my-network:
+    external: true  # 声明使用外部网络
