@@ -48,13 +48,24 @@ type VEH2CLOUD_STATE {
 	PassPoints      []Position2D `json:"passPoints"` // 途经点: N 个途经点，其中 N 为途径点数量
 }
 
-type VehicleStatusResp {
-	Code     string `json:"code"`
-	ErrorMsg bool   `json:"errorMsg"`
-}
-
 type OnlineCountResp {
 	Count int `json:"count"`
+}
+
+type TrajectoryReq {
+	VehicleId string `json:"vehicleId"` // required
+	StartMs   int64  `json:"startMs"` // ms
+	EndMs     int64  `json:"endMs"` // ms
+}
+
+type PositionPoint {
+	Timestamp uint64 `json:"timestamp"` // ms
+	Longitude uint32 `json:"longitude"`
+	Latitude  uint32 `json:"latitude"`
+}
+
+type TrajectoryResp {
+	Trajectory []PositionPoint `json:"trajectory"`
 }
 
 service vehicle-api {
@@ -63,5 +74,8 @@ service vehicle-api {
 
 	@handler HandleOnlineCount
 	get /api/vehicle/online_count returns (OnlineCountResp)
+
+	@handler HandleGetTrajectory
+	post /api/vehicle/gettrajectory (TrajectoryReq) returns (TrajectoryResp)
 }
 

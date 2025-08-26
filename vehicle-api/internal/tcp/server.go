@@ -2,7 +2,6 @@ package tcp
 
 import (
 	"bufio"
-	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	"vehicle-api/internal/logic"
 	"vehicle-api/internal/svc"
 	"vehicle-api/internal/types"
 
@@ -392,9 +390,10 @@ func (s *TCPServer) handleVehicleState(data []byte) error {
 		PassPoints:      passPoints,
 	}
 
-	lg := logic.NewHandleVehicleStatusLogic(context.TODO(), s.ctx)
-	if _, err := lg.HandleVehicleStatus(req); err != nil {
-		return err
+	if s.ctx != nil {
+		if err := s.ctx.ProcessState(req); err != nil {
+			return err
+		}
 	}
 	return nil
 }

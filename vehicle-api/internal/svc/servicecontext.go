@@ -2,13 +2,16 @@ package svc
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 	"vehicle-api/internal/config"
 	"vehicle-api/internal/dao"
+	"vehicle-api/internal/types"
 	"vehicle-api/internal/websocket"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
@@ -55,4 +58,40 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}()
 
 	return ctx
+}
+
+// ProcessState 将 VEH2CLOUD_STATE 写入 Influx，并通过 WebSocket 广播最新状态
+func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
+	if sc == nil {
+		return nil
+	}
+
+	// 写入 InfluxDB
+	if sc.Dao == nil {
+		logx.Errorf("no dao configured, skip write")
+	} else {
+		p, err := sc.Dao.BuildPoint(req)
+		if err != nil {
+			logx.Errorf("build point error: %v", err)
+		} else {
+			if err := sc.Dao.AddPoint(p); err != nil {
+				logx.Errorf("add point error: %v", err)
+			}
+		}
+	}
+
+	// 广播最新状态到 websocket hub
+	if sc.WSHub != nil {
+		bs, _ := json.Marshal(map[string]interface{}{
+			"vehicleId": req.VehicleId,
+			"timestamp": req.TimestampGNSS,
+			"lon":       req.Position.Longitude,
+			"lat":       req.Position.Latitude,
+			"velocity":  req.Velocity,
+		})
+		sc.WSHub.Broadcast <- bs
+	}
+
+	// TODO: parsing planningLocs, detectionData, custom cargo fields
+	return nil
 }

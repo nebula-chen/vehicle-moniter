@@ -15,6 +15,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				Method:  http.MethodPost,
+				Path:    "/api/vehicle/gettrajectory",
+				Handler: HandleGetTrajectoryHandler(serverCtx),
+			},
+			{
 				Method:  http.MethodGet,
 				Path:    "/api/vehicle/online_count",
 				Handler: HandleOnlineCountHandler(serverCtx),

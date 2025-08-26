@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 type InfluxDao struct {
 	InfluxWriter influxdb2.Client
 	WriteAPI     api.WriteAPI
+	Org          string
+	Bucket       string
 }
 
 func NewInfluxDao(client influxdb2.Client, org, bucket string) *InfluxDao {
@@ -29,6 +32,8 @@ func NewInfluxDao(client influxdb2.Client, org, bucket string) *InfluxDao {
 	return &InfluxDao{
 		InfluxWriter: client,
 		WriteAPI:     writeAPI,
+		Org:          org,
+		Bucket:       bucket,
 	}
 }
 
@@ -74,4 +79,54 @@ func (d *InfluxDao) BuildPoint(vehicleStatus *types.VEH2CLOUD_STATE) (*write.Poi
 func (d *InfluxDao) Close() {
 	d.WriteAPI.Flush()
 	d.InfluxWriter.Close()
+}
+
+// QueryPositions returns ordered position points for a vehicle between start and end (inclusive)
+func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.Time) ([]types.PositionPoint, error) {
+	// Build Flux query: filter by measurement and vehicleId, pivot fields to get longitude/latitude per timestamp
+	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn: (r) => r._measurement == "vehicle_status" and r["vehicleId"] == "%s") |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value") |> keep(columns:["_time","longitude","latitude"]) |> sort(columns:["_time"])`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), vehicleId)
+
+	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
+	result, err := queryAPI.Query(context.Background(), flux)
+	if err != nil {
+		return nil, err
+	}
+
+	pts := make([]types.PositionPoint, 0)
+	for result.Next() {
+		rec := result.Record()
+		// values may be float64 or int64 depending on write
+		var lon uint32
+		var lat uint32
+		if v := rec.ValueByKey("longitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				lon = uint32(t)
+			case float64:
+				lon = uint32(t)
+			case uint64:
+				lon = uint32(t)
+			default:
+				lon = 0
+			}
+		}
+		if v := rec.ValueByKey("latitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				lat = uint32(t)
+			case float64:
+				lat = uint32(t)
+			case uint64:
+				lat = uint32(t)
+			default:
+				lat = 0
+			}
+		}
+		ts := uint64(rec.Time().UnixMilli())
+		pts = append(pts, types.PositionPoint{Timestamp: ts, Longitude: lon, Latitude: lat})
+	}
+	if result.Err() != nil {
+		return nil, result.Err()
+	}
+	return pts, nil
 }

@@ -27,6 +27,22 @@ type Position2D struct {
 	Latitude  uint32 `json:"latitude"`  // 纬度: 与 Position.Latitude 相同的表示，单位 1e-7°，数据偏移量 90，0xFFFFFFFF 表示异常或缺省
 }
 
+type PositionPoint struct {
+	Timestamp uint64 `json:"timestamp"` // ms
+	Longitude uint32 `json:"longitude"`
+	Latitude  uint32 `json:"latitude"`
+}
+
+type TrajectoryReq struct {
+	VehicleId string `json:"vehicleId"` // required
+	StartMs   int64  `json:"startMs"`   // ms
+	EndMs     int64  `json:"endMs"`     // ms
+}
+
+type TrajectoryResp struct {
+	Trajectory []PositionPoint `json:"trajectory"`
+}
+
 type VEH2CLOUD_STATE struct {
 	VehicleId       string       `json:"vehicleId"`       // 车辆编号：长度 8 个字符，需在云端平台登记，不可缺省
 	MessageId       []byte       `json:"messageId"`       // 消息编号：车端维护的车辆状态信息编号，为[0..2^64 -1]间的自增序列，超过2^64 - 1后，重新从 1 开始计数，云端用以确认消息的接收，不可缺省
@@ -52,9 +68,4 @@ type VEH2CLOUD_STATE struct {
 	DestLocation    Position2D   `json:"destLocation"`    // 目的地位置：车辆当前驾驶任务的终点位置，POSITION2D 中经度或纬度为异常值时，表示未获取到目的地位置
 	PassPointsNum   byte         `json:"passPointsNum"`   // 途经点数量: [0..255]，0 表示没有途径点，不发送途经点字段，其他取值都均表示
 	PassPoints      []Position2D `json:"passPoints"`      // 途经点: N 个途经点，其中 N 为途径点数量
-}
-
-type VehicleStatusResp struct {
-	Code     string `json:"code"`
-	ErrorMsg bool   `json:"errorMsg"`
 }
