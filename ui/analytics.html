@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>指标数据统计分析 - 网联末端物流</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/analytics.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧导航栏（复用现有结构） -->
+        <aside class="sidebar">
+            <h2>网联赋能末端物流子系统</h2>
+            <ul class="nav-list">
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>车辆信息管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">车辆档案录入</li>
+                    <li class="sub-item">设备配置管理</li>
+                    <li class="sub-item"><a href="/dashboard">车辆动态状态管理</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>订单派送管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item"><a href="/parcel">物流包裹信息管理</a></li>
+                    <li class="sub-item">订单全链路跟踪</li>
+                    <li class="sub-item">异常订单处理</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>物流调度管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">物流站点信息管理</li>
+                    <li class="sub-item">充电站信息管理</li>
+                    <li class="sub-item">动态调度优化可视化</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>数据安全与分析模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">车辆实时信息</li>
+                    <li class="sub-item">车辆历史运行信息</li>
+                    <li class="sub-item"><a href="/analytics">指标数据统计分析</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>用户交互模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">售后意见处理</li>
+                    <li class="sub-item">异常事件告警处理</li>
+                    <li class="sub-item">自助服务与反馈</li>
+                    <li class="sub-item">个性化服务</li>
+                </ul>
+            </ul>
+        </aside>
+
+        <!-- 主体：统计面板 -->
+        <main class="main-package analytics">
+            <h1>指标数据统计分析</h1>
+
+            <!-- 操作栏 -->
+            <div class="analytics-controls">
+                <label class="analytics-label">时间范围：</label>
+                <select id="rangeSelect" class="analytics-select">
+                    <option value="5">最近5天</option>
+                    <option value="7">最近7天</option>
+                    <option value="30">最近30天</option>
+                </select>
+                <button id="refreshBtn" class="analytics-btn">刷新</button>
+                <div class="analytics-spacer"></div>
+                <button id="exportAllBtn" class="analytics-export-btn">
+                    <i class="bi bi-download"></i> 导出可视图
+                </button>
+            </div>
+
+            <!-- 图表栅格（竖向排列，风格参考图片） -->
+            <div id="chartsWrap" class="analytics-charts-wrap">
+                <!-- 每个卡片包含标题、小说明和 canvas -->
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">车次统计</div>
+                        <div id="totalTrips" class="analytics-card-meta">总数: --</div>
+                    </div>
+                    <div id="chartTrips" class="analytics-canvas"></div>
+                </div>
+
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">运输货量统计</div>
+                        <div id="totalWeight" class="analytics-card-meta">总量: -- kg</div>
+                    </div>
+                    <div id="chartWeight" class="analytics-canvas"></div>
+                </div>
+
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">运输耗电统计</div>
+                        <div id="totalEnergy" class="analytics-card-meta">总数: -- kWh</div>
+                    </div>
+                    <div id="chartEnergy" class="analytics-canvas"></div>
+                </div>
+
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">准点率</div>
+                    </div>
+                    <div id="chartRatio" class="analytics-canvas analytics-canvas-short"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>

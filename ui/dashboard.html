@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>网联赋能末端物流子系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/data.js"></script>
+    <!--加载高德地图插件-->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=0ab0f0b45664f7b5d7f3030df28d12f0&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,Map3D,AMap.Buildings"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="js/dashboard.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧导航栏 -->
+        <aside class="sidebar">
+            <h2>网联赋能末端物流子系统</h2>
+            <ul class="nav-list">
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>车辆信息管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">车辆档案录入</li>
+                    <li class="sub-item">设备配置管理</li>
+                    <li class="sub-item"><a href="/dashboard">车辆动态状态管理</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>订单派送管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item"><a href="/parcel">物流包裹信息管理</a></li>
+                    <li class="sub-item">订单全链路跟踪</li>
+                    <li class="sub-item">异常订单处理</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>物流调度管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">物流站点信息管理</li>
+                    <li class="sub-item">充电站信息管理</li>
+                    <li class="sub-item">动态调度优化可视化</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>数据安全与分析模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">车辆实时信息</li>
+                    <li class="sub-item">车辆历史运行信息</li>
+                    <li class="sub-item"><a href="/analytics">指标数据统计分析</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>用户交互模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">售后意见处理</li>
+                    <li class="sub-item">异常事件告警处理</li>
+                    <li class="sub-item">自助服务与反馈</li>
+                    <li class="sub-item">个性化服务</li>
+                </ul>
+            </ul>
+        </aside>
+        <!-- 主体内容 -->
+        <main class="main-map">
+            <!-- 顶部统计栏 -->
+            <section class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-icon">≡</div>
+                    <div class="stat-title">总车次</div>
+                    <div class="stat-value">XXX 次</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚙</div>
+                    <div class="stat-title">里程</div>
+                    <div class="stat-value">XXX km</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-title">总载物量</div>
+                    <div class="stat-value">XXX kg</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🚚</div>
+                    <div class="stat-title">当前车辆</div>
+                    <div class="stat-value">渝U0001</div>
+                </div>
+            </section>
+            <!-- 地图与车辆图标 -->
+            <section class="map-section">
+                <div id="amap"></div>
+                <!-- <div class="map-area">
+                    <div class="vehicle-marker">
+                        <span class="vehicle-icon">🚚</span>
+                        <span class="vehicle-label">车辆</span>
+                    </div>
+                    <span class="map-label">地图</span>
+                </div> -->
+            </section>
+        </main>
+        <!-- 右侧信息栏 -->
+        <aside class="info-panel">
+            <div class="stat-search">
+                <input type="text" placeholder="查询: 车辆编号/车次">
+                <button>查询</button>
+            </div>
+            <div class="info-list">
+            </div>
+        </aside>
+    </div>
+</body>
+</html>

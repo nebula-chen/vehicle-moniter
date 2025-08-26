@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>网联赋能末端物流子系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/data.js"></script>
+    <script src="js/package.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧导航栏 -->
+        <aside class="sidebar">
+            <h2>网联赋能末端物流子系统</h2>
+            <ul class="nav-list">
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>车辆信息管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item">车辆档案录入</li>
+                    <li class="sub-item">设备配置管理</li>
+                    <li class="sub-item"><a href="/dashboard">车辆动态状态管理</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>订单派送管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    <li class="sub-item"><a href="/parcel">物流包裹信息管理</a></li>
+                    <li class="sub-item">订单全链路跟踪</li>
+                    <li class="sub-item">异常订单处理</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>物流调度管理模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">物流站点信息管理</li>
+                    <li class="sub-item">充电站信息管理</li>
+                    <li class="sub-item">动态调度优化可视化</li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>数据安全与分析模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">车辆实时信息</li>
+                    <li class="sub-item">车辆历史运行信息</li>
+                    <li class="sub-item"><a href="/analytics">指标数据统计分析</a></li>
+                </ul>
+                <li class="nav-item" onclick="toggleSub(this)">
+                    <span>用户交互模块</span>
+                    <i class="bi bi-chevron-down"></i>
+                </li>
+                <ul class="sub-list">
+                    
+                    <li class="sub-item">售后意见处理</li>
+                    <li class="sub-item">异常事件告警处理</li>
+                    <li class="sub-item">自助服务与反馈</li>
+                    <li class="sub-item">个性化服务</li>
+                </ul>
+            </ul>
+        </aside>
+        <div class="main-package">
+            <h1>物流包裹信息管理系统</h1>
+            <!-- 检索筛选区 -->
+            <form class="filter-bar" id="filterForm" onsubmit="event.preventDefault();filterPackages();">
+                <input type="text" id="filterName" placeholder="收件人姓名">
+                <input type="text" id="filterPhone" placeholder="手机号">
+                <input type="text" id="filterAddress" placeholder="地址">
+                <select id="filterPoint">
+                    <option value="">快递点</option>
+                    <option value="A点">A点</option>
+                    <option value="B点">B点</option>
+                    <option value="C点">C点</option>
+                </select>
+                <select id="filterStatus">
+                    <option value="">配送状态</option>
+                    <option value="待取件">待取件</option>
+                    <option value="已取件">已取件</option>
+                    <option value="配送中">配送中</option>
+                    <option value="已完成">已完成</option>
+                </select>
+                <button type="submit">检索</button>
+            </form>
+            <!-- 包裹列表 -->
+            <div class="package-card-list" id="packageCardList">
+                <!-- 卡片由 JS 动态渲染 -->
+            </div>
+            <div style="font-size:0.95rem;color:#888;">* 点击包裹卡片可查看详细信息</div>
+        </div>
+    </div>
+    <!-- 详细信息弹窗 -->
+    <div class="modal-bg" id="modalBg">
+        <div class="modal">
+            <button class="close-btn" onclick="closeDetail()">×</button>
+            <h2 id="modalTitle">包裹详细信息</h2>
+            <div class="modal-detail" id="modalDetail">
+                <!-- 动态填充内容 -->
+            </div>
+        </div>
+    </div>
+</body>
+</html>

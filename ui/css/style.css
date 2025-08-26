@@ -1,0 +1,625 @@
+/* 政府项目严肃风格样式 */
+:root {
+    --primary-blue: #1a56db;
+    --dark-blue: #1e3a8a;
+    --light-blue: #eff6ff;
+    --gray-dark: #374151;
+    --gray-medium: #6b7280;
+    --gray-light: #e5e7eb;
+    --gray-bg: #f9fafb;
+    --white: #ffffff;
+    --border-color: #d1d5db;
+}
+
+body {
+    margin: 0;
+    font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
+    background: var(--gray-bg);
+    color: var(--gray-dark);
+    line-height: 1.5;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+    min-width: 1200px;
+}
+
+/* 左侧导航栏 - 严肃风格 */
+.sidebar {
+    width: 12%;
+    background: var(--white);
+    padding: 20px 0;
+    border-right: 1px solid var(--border-color);
+    box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+}
+
+.sidebar h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 20px 20px 20px;
+    padding-bottom: 15px;
+    color: var(--dark-blue);
+    border-bottom: 2px solid var(--gray-light);
+}
+
+.nav-list {
+    width: 100%;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.nav-item {
+    font-size: 15px;
+    font-weight: 500;
+    padding: 12px 20px;
+    cursor: pointer;
+    color: var(--gray-dark);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.nav-item:hover {
+    background: var(--light-blue);
+    border-left-color: var(--primary-blue);
+}
+
+.nav-item .bi {
+    font-size: 14px;
+    color: var(--gray-medium);
+}
+
+.sub-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: none;
+    background: var(--gray-bg);
+    border-left: 3px solid var(--primary-blue);
+}
+
+.sub-list.show {
+    display: block;
+}
+
+.sub-item {
+    font-size: 14px;
+    color: var(--gray-medium);
+    padding: 10px 20px 10px 40px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 1px solid var(--gray-light);
+}
+
+.sub-item:hover {
+    background: var(--light-blue);
+    color: var(--primary-blue);
+}
+
+.sub-item:last-child {
+    border-bottom: none;
+}
+
+/* 主体内容区域 */
+.main-map {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background: var(--gray-bg);
+}
+
+/* 统计卡片 - 严肃风格 */
+.stats-bar {
+    display: flex;
+    gap: 15px;
+    padding: 20px;
+    background: var(--white);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* 改为更占满卡片、图标和文本放大 */
+.stats-bar .stat-card {
+    flex: 1 1 0;
+    background: var(--white);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;            /* 略微减小内边距，留出更多展示空间 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;      /* 垂直居中，尽量占满卡片高度 */
+    gap: 8px;
+    transition: all 0.18s;
+    cursor: pointer;
+    box-sizing: border-box;
+    min-height: 84px;
+}
+
+/* 高亮/悬停样式保持但稍微强化视觉 */
+.stat-card.active, .stat-card:hover {
+    border-color: var(--primary-blue);
+    box-shadow: 0 4px 18px rgba(26,86,219,0.12);
+    background: var(--light-blue);
+}
+
+/* 放大图标与文字 */
+.stat-icon {
+    font-size: 44px;               /* 放大图标 */
+    line-height: 1;
+    color: var(--primary-blue);
+    margin: 0;                     /* 减少额外空隙，使图标更贴近文字 */
+    transform: translateY(-2px);   /* 轻微上移以平衡视觉 */
+}
+
+.stat-title {
+    font-size: 15px;               /* 放大标题 */
+    color: var(--gray-medium);
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.stat-value {
+    font-size: 26px;               /* 放大数值 */
+    color: var(--gray-dark);
+    font-weight: 700;
+    margin: 0;
+}
+
+/* 地图区域 */
+.map-section {
+    flex: 1;
+    padding: 20px;
+    position: relative;
+}
+
+#amap {
+    width: 100%;
+    height: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--white);
+}
+
+/* 右侧信息面板 - 严肃风格 */
+.info-panel {
+    width: 300px;
+    background: var(--white);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    background: var(--primary-blue);
+    color: var(--white);
+    padding: 15px 20px;
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.stat-search {
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    gap: 10px;
+}
+
+.stat-search input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.stat-search input:focus {
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(26,86,219,0.1);
+}
+
+.stat-search button {
+    background: var(--primary-blue);
+    color: var(--white);
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.stat-search button:hover {
+    background: var(--dark-blue);
+}
+
+.info-list {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.info-list h3 {
+    color: var(--gray-dark);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--gray-light);
+}
+
+.info-list ul {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.info-list div {
+    background: var(--gray-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.info-list b {
+    color: var(--primary-blue);
+    font-weight: 600;
+}
+
+/* 简洁的动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sub-list {
+    animation: fadeIn 0.2s ease-out;
+}
+
+/* 响应式调整 */
+@media (max-width: 1400px) {
+    .container {
+        min-width: 1000px;
+    }
+    
+    .sidebar {
+        width: 180px;
+    }
+    
+    .info-panel {
+        width: 280px;
+    }
+}
+
+/* 滚动条样式 */
+.info-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.info-list::-webkit-scrollbar-track {
+    background: var(--gray-bg);
+}
+
+.info-list::-webkit-scrollbar-thumb {
+    background: var(--gray-medium);
+    border-radius: 3px;
+}
+
+.info-list::-webkit-scrollbar-thumb:hover {
+    background: var(--gray-dark);
+}
+
+/* 包裹信息主区域 */
+.main-package {
+    flex: 2;
+    padding: 32px 24px;
+}
+
+h1 {
+    font-size: 2rem;
+    margin-bottom: 24px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+/* 检索筛选区 */
+.filter-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+.filter-bar input, .filter-bar select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 1rem;
+    background: #fff;
+}
+.filter-bar button {
+    padding: 8px 20px;
+    background: #2d5be3;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.filter-bar button:hover {
+    background: #1a3fa0;
+}
+/* 包裹列表 */
+.package-list {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+}
+.package-list th, .package-list td {
+    padding: 12px 8px;
+    border-bottom: 1px solid #e3e7ed;
+    text-align: left;
+}
+.package-list th {
+    background: #f0f2f5;
+    font-weight: 500;
+}
+.package-row {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.package-row:hover {
+    background: #eaf0fc;
+}
+/* 包裹卡片列表样式 */
+.package-card-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    margin-bottom: 16px;
+}
+.package-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(26,86,219,0.07);
+    border: 1px solid #e3e7ed;
+    width: 320px;
+    padding: 20px 18px 16px 18px;
+    cursor: pointer;
+    transition: box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+.package-card:hover {
+    box-shadow: 0 4px 20px rgba(26,86,219,0.13);
+    border-color: #1a56db;
+}
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.card-id {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1a56db;
+    background: #eff6ff;
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+.card-status {
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 2px 10px;
+    border-radius: 6px;
+    color: #fff;
+    margin-right: 8px;
+}
+.card-status.待取件 { background: #f59e42; }
+.card-status.已取件 { background: #2d5be3; }
+.card-status.配送中 { background: #fbbf24; }
+.card-status.已完成 { background: #22c55e; }
+.card-body {
+    font-size: 1rem;
+    color: #374151;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.card-route {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 500;
+    color: #1a56db;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+}
+
+.card-route .from {
+    text-align: left;
+    flex: 1;
+}
+
+.card-route .to {
+    text-align: right;
+    flex: 1;
+}
+
+.card-names {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 2px;
+}
+
+.card-names .sender {
+    width: 48%;
+    text-align: left;
+    font-size: 0.98rem;
+    color: #374151;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-names .addressee {
+    width: 48%;
+    text-align: right; /* 修改为右对齐 */
+    font-size: 0.98rem;
+    color: #374151;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-status-info {
+    font-size: 0.95rem;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.card-body hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 4px 0;
+}
+
+/* 详细信息弹窗 */
+.modal-bg {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.18);
+    z-index: 10;
+    justify-content: center;
+    align-items: center;
+}
+.modal {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    padding: 32px 24px;
+    min-width: 340px;
+    max-width: 400px;
+    position: relative;
+}
+.modal h2 {
+    margin-top: 0;
+    font-size: 1.3rem;
+    margin-bottom: 16px;
+}
+.modal .close-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: #888;
+}
+.modal-detail {
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+/* ==========================
+   Analytics page styles
+   ========================== */
+.main-package.analytics {
+    padding: 20px 28px;
+}
+
+.analytics-controls {
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:18px;
+}
+.analytics-label{
+    font-weight:600;
+    color:var(--gray-dark);
+}
+.analytics-select{
+    padding:8px;
+    border-radius:6px;
+    border:1px solid var(--border-color);
+    background:#fff;
+}
+.analytics-btn{
+    padding:8px 14px;
+    border-radius:6px;
+    background:var(--primary-blue);
+    color:#fff;
+    border:none;
+    cursor:pointer;
+}
+.analytics-export-btn{
+    padding:8px 14px;
+    border-radius:6px;
+    background:#2d5be3;
+    color:#fff;
+    border:none;
+    cursor:pointer;
+}
+.analytics-spacer{flex:1}
+
+.analytics-charts-wrap{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(320px, 1fr));
+    gap:22px;
+    max-width:100%;
+    width:100%;
+    align-items:stretch;                 /* 让卡片高度拉伸一致 */
+    grid-auto-rows: minmax(220px, 1fr);  /* 两行两列，自动均分行高 */
+    height: calc(100vh - 240px);         /* 让图表区尽量填满页面（根据 header/controls 留白） */
+}
+
+/* 让卡片内部垂直布局，图表占满剩余空间 */
+.analytics-card{
+    padding:14px 16px;
+    box-sizing:border-box;
+    width:100%;
+    min-height:220px; /* 确保卡片高度统一并更像小卡片 */
+    display: flex;
+    flex-direction: column;
+}
+
+/* canvas 改为可拉伸的容器，充满卡片剩余空间 */
+.analytics-canvas{
+    width:100% !important;
+    height:100% !important;   /* 改为填满父容器高度，避免 auto 导致渲染高度不足 */
+    flex: 1 1 auto;
+    display:block;
+    min-height: 140px;
+}
+
+/* 最后一张图略矮（保持相比其它图稍矮） */
+.analytics-canvas-short{
+    /* 取消固定的 max-height/min-height，让其与其他图同样通过 flex 拉伸 */
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+    height:100% !important;
+}
+
+@media (max-width: 1200px) {
+    .analytics-charts-wrap{ max-width:760px; grid-template-columns: repeat(1, 1fr); }
+    .analytics-canvas{ height:200px !important; }
+    .analytics-canvas-short{ height:140px !important; }
+}
