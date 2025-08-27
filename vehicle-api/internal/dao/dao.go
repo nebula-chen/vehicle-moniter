@@ -122,7 +122,9 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 				lat = 0
 			}
 		}
-		ts := uint64(rec.Time().UnixMilli())
+		// use UTC RFC3339 timestamp string for responses
+		t := rec.Time().UTC()
+		ts := t.Format(time.RFC3339)
 		pts = append(pts, types.PositionPoint{Timestamp: ts, Longitude: lon, Latitude: lat})
 	}
 	if result.Err() != nil {
