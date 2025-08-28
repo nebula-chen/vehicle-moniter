@@ -581,23 +581,25 @@ h1 {
 
 .analytics-charts-wrap{
     display:grid;
-    grid-template-columns: repeat(2, minmax(320px, 1fr));
-    gap:22px;
+    grid-template-columns: repeat(3, minmax(280px, 1fr));
+    gap:18px;
     max-width:100%;
     width:100%;
     align-items:stretch;                 /* 让卡片高度拉伸一致 */
-    grid-auto-rows: minmax(220px, 1fr);  /* 两行两列，自动均分行高 */
-    height: calc(100vh - 240px);         /* 让图表区尽量填满页面（根据 header/controls 留白） */
+    grid-auto-rows: minmax(220px, 1fr);  /* 多列自动换行，均分行高 */
+    height: calc(100vh - 220px);         /* 让图表区尽量填满页面（根据 header/controls 留白） */
 }
 
 /* 让卡片内部垂直布局，图表占满剩余空间 */
 .analytics-card{
-    padding:14px 16px;
+    padding:12px 14px;
     box-sizing:border-box;
     width:100%;
     min-height:220px; /* 确保卡片高度统一并更像小卡片 */
     display: flex;
     flex-direction: column;
+    background: linear-gradient(180deg, #fff, #fbfdff);
+    border: 1px solid rgba(20,35,60,0.04);
 }
 
 /* canvas 改为可拉伸的容器，充满卡片剩余空间 */
@@ -606,7 +608,7 @@ h1 {
     height:100% !important;   /* 改为填满父容器高度，避免 auto 导致渲染高度不足 */
     flex: 1 1 auto;
     display:block;
-    min-height: 140px;
+    min-height: 160px;
 }
 
 /* 最后一张图略矮（保持相比其它图稍矮） */
@@ -618,8 +620,10 @@ h1 {
     height:100% !important;
 }
 
-@media (max-width: 1200px) {
-    .analytics-charts-wrap{ max-width:760px; grid-template-columns: repeat(1, 1fr); }
-    .analytics-canvas{ height:200px !important; }
-    .analytics-canvas-short{ height:140px !important; }
+@media (max-width: 1400px) {
+    .analytics-charts-wrap{ grid-template-columns: repeat(2, 1fr); height: auto; }
+}
+@media (max-width: 900px) {
+    .analytics-charts-wrap{ grid-template-columns: repeat(1, 1fr); }
+    .analytics-canvas{ height:260px !important; }
 }

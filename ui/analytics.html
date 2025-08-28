@@ -87,36 +87,59 @@
 
             <!-- 图表栅格（竖向排列，风格参考图片） -->
             <div id="chartsWrap" class="analytics-charts-wrap">
-                <!-- 每个卡片包含标题、小说明和 canvas -->
+                <!-- 新需求：按照设计图展示的统计项（完全替换旧图表） -->
+                <!-- 行 1：订单统计：订单数量、订单金额 -->
                 <div class="package-card analytics-card">
                     <div class="analytics-card-header">
-                        <div class="analytics-card-title">车次统计</div>
-                        <div id="totalTrips" class="analytics-card-meta">总数: --</div>
+                        <div class="analytics-card-title">订单数量统计</div>
+                        <div id="metaOrderCount" class="analytics-card-meta">总数: --</div>
                     </div>
-                    <div id="chartTrips" class="analytics-canvas"></div>
+                    <div id="chartOrderCount" class="analytics-canvas"></div>
                 </div>
 
                 <div class="package-card analytics-card">
                     <div class="analytics-card-header">
-                        <div class="analytics-card-title">运输货量统计</div>
-                        <div id="totalWeight" class="analytics-card-meta">总量: -- kg</div>
+                        <div class="analytics-card-title">订单金额统计</div>
+                        <div id="metaOrderAmount" class="analytics-card-meta">总额: -- 元</div>
                     </div>
-                    <div id="chartWeight" class="analytics-canvas"></div>
+                    <div id="chartOrderAmount" class="analytics-canvas"></div>
+                </div>
+
+                <!-- 行 2：车辆运营统计：车辆利用率、配送效率、效能对比 -->
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">车辆利用率</div>
+                    </div>
+                    <div id="chartVehicleUtil" class="analytics-canvas"></div>
                 </div>
 
                 <div class="package-card analytics-card">
                     <div class="analytics-card-header">
-                        <div class="analytics-card-title">运输耗电统计</div>
-                        <div id="totalEnergy" class="analytics-card-meta">总数: -- kWh</div>
+                        <div class="analytics-card-title">配送效率（平均配送时长）</div>
                     </div>
-                    <div id="chartEnergy" class="analytics-canvas"></div>
+                    <div id="chartDeliveryEff" class="analytics-canvas"></div>
                 </div>
 
                 <div class="package-card analytics-card">
                     <div class="analytics-card-header">
-                        <div class="analytics-card-title">准点率</div>
+                        <div class="analytics-card-title">效能对比分析（按车型/区域）</div>
                     </div>
-                    <div id="chartRatio" class="analytics-canvas analytics-canvas-short"></div>
+                    <div id="chartEfficiencyCompare" class="analytics-canvas"></div>
+                </div>
+
+                <!-- 行 3：客户满意度：评价统计、投诉统计 -->
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">评价统计（好评率/中评/差评）</div>
+                    </div>
+                    <div id="chartRatings" class="analytics-canvas"></div>
+                </div>
+
+                <div class="package-card analytics-card">
+                    <div class="analytics-card-header">
+                        <div class="analytics-card-title">投诉统计（按类型）</div>
+                    </div>
+                    <div id="chartComplaints" class="analytics-canvas"></div>
                 </div>
             </div>
         </main>
