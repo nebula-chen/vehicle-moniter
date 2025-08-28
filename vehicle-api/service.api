@@ -68,6 +68,45 @@ type TrajectoryResp {
 	Trajectory []PositionPoint `json:"trajectory"`
 }
 
+// Analytics 统计 API 定义
+type AnalyticsReq {
+	startDate   string `json:"startDate"` // 可选，格式 yyyy-mm-dd 或 RFC3339
+	endDate     string `json:"endDate"` // 可选
+	groupBy     string `json:"groupBy"` // 可选：day|week|month
+	rangeDays   int    `json:"rangeDays,optional"` // 可选，优先级低于 start/end
+	region      string `json:"region,optional"` // 可选：按区域过滤
+	vehicleType string `json:"vehicleType,optional"` // 可选：按车型过滤
+}
+
+type TimeSeries {
+	dates  []string  `json:"dates"`
+	values []float64 `json:"values"`
+	total  float64   `json:"total"`
+}
+
+type EfficiencyCompareSeries {
+	dates    []string  `json:"dates"`
+	smallVan []float64 `json:"smallVan"`
+	largeVan []float64 `json:"largeVan"`
+}
+
+type RatingsSeries {
+	dates []string `json:"dates"`
+	good  []int    `json:"good"`
+	mid   []int    `json:"mid"`
+	bad   []int    `json:"bad"`
+}
+
+type AnalyticsOverviewResp {
+	orderCount        TimeSeries              `json:"orderCount"`
+	orderAmount       TimeSeries              `json:"orderAmount"`
+	vehicleUtil       TimeSeries              `json:"vehicleUtil"`
+	deliveryEff       TimeSeries              `json:"deliveryEff"`
+	efficiencyCompare EfficiencyCompareSeries `json:"efficiencyCompare"`
+	ratings           RatingsSeries           `json:"ratings"`
+	complaints        TimeSeries              `json:"complaints"`
+}
+
 service vehicle-api {
 	@handler HandleWebSocket
 	get /api/vehicle/ws
@@ -77,5 +116,15 @@ service vehicle-api {
 
 	@handler HandleGetTrajectory
 	post /api/vehicle/gettrajectory (TrajectoryReq) returns (TrajectoryResp)
+
+	@handler HandleAnalyticsOverview
+	post /api/analytics/overview (AnalyticsReq) returns (AnalyticsOverviewResp)
+
+	// 可以按需单独查询某个指标
+	@handler HandleAnalyticsOrderCount
+	get /api/analytics/order_count (AnalyticsReq) returns (TimeSeries)
+
+	@handler HandleAnalyticsOrderAmount
+	get /api/analytics/order_amount (AnalyticsReq) returns (TimeSeries)
 }
 

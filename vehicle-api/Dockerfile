@@ -33,6 +33,6 @@ RUN apk add --no-cache tzdata \
     && echo "Asia/Shanghai" > /etc/timezone
 
 # 替换为实际的端口
-EXPOSE 8666
+EXPOSE 6000
 
 CMD ["sh", "-c", "./app -f etc/vehicle-api.yaml > /app/log/app.log 2>&1"]

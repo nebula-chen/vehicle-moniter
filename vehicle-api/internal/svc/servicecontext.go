@@ -15,9 +15,10 @@ import (
 )
 
 type ServiceContext struct {
-	Config config.Config
-	WSHub  *websocket.Hub
-	Dao    *dao.InfluxDao
+	Config    config.Config
+	WSHub     *websocket.Hub
+	Dao       *dao.InfluxDao
+	Analytics *dao.AnalyticsDao
 
 	OnlineDrones sync.Map // key: uasID, value: time.Time
 }
@@ -37,9 +38,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic("InfluxDB connect error: " + err.Error())
 	}
 	ctx := &ServiceContext{
-		Config: c,
-		WSHub:  hub,
-		Dao:    dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
+		Config:    c,
+		WSHub:     hub,
+		Dao:       dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
+		Analytics: dao.NewAnalyticsDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
 	}
 
 	// 启动定时清理协程

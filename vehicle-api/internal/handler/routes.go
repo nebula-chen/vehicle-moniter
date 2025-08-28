@@ -15,6 +15,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				Method:  http.MethodGet,
+				Path:    "/api/analytics/order_amount",
+				Handler: HandleAnalyticsOrderAmountHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/analytics/order_count",
+				Handler: HandleAnalyticsOrderCountHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPost,
+				Path:    "/api/analytics/overview",
+				Handler: HandleAnalyticsOverviewHandler(serverCtx),
+			},
+			{
 				Method:  http.MethodPost,
 				Path:    "/api/vehicle/gettrajectory",
 				Handler: HandleGetTrajectoryHandler(serverCtx),

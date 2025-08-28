@@ -3,6 +3,31 @@
 
 package types
 
+type AnalyticsOverviewResp struct {
+	OrderCount        TimeSeries              `json:"orderCount"`
+	OrderAmount       TimeSeries              `json:"orderAmount"`
+	VehicleUtil       TimeSeries              `json:"vehicleUtil"`
+	DeliveryEff       TimeSeries              `json:"deliveryEff"`
+	EfficiencyCompare EfficiencyCompareSeries `json:"efficiencyCompare"`
+	Ratings           RatingsSeries           `json:"ratings"`
+	Complaints        TimeSeries              `json:"complaints"`
+}
+
+type AnalyticsReq struct {
+	StartDate   string `json:"startDate"`            // 可选，格式 yyyy-mm-dd 或 RFC3339
+	EndDate     string `json:"endDate"`              // 可选
+	GroupBy     string `json:"groupBy"`              // 可选：day|week|month
+	RangeDays   int    `json:"rangeDays,optional"`   // 可选，优先级低于 start/end
+	Region      string `json:"region,optional"`      // 可选：按区域过滤
+	VehicleType string `json:"vehicleType,optional"` // 可选：按车型过滤
+}
+
+type EfficiencyCompareSeries struct {
+	Dates    []string  `json:"dates"`
+	SmallVan []float64 `json:"smallVan"`
+	LargeVan []float64 `json:"largeVan"`
+}
+
 type FixedHeader struct {
 	StartByte    byte   `json:"startByte"`    // 标识位：固定为 0xF2
 	DataLength   uint32 `json:"dataLength"`   // 数据段长度：[0..4294967296]，表示当前报文中数据段内容所占字节数，单位：字节，最多描述 4GB 数据
@@ -31,6 +56,19 @@ type PositionPoint struct {
 	Timestamp string `json:"timestamp"` // RFC3339 UTC timestamp
 	Longitude uint32 `json:"longitude"`
 	Latitude  uint32 `json:"latitude"`
+}
+
+type RatingsSeries struct {
+	Dates []string `json:"dates"`
+	Good  []int    `json:"good"`
+	Mid   []int    `json:"mid"`
+	Bad   []int    `json:"bad"`
+}
+
+type TimeSeries struct {
+	Dates  []string  `json:"dates"`
+	Values []float64 `json:"values"`
+	Total  float64   `json:"total"`
 }
 
 type TrajectoryReq struct {
