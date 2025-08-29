@@ -15,7 +15,6 @@ body {
     margin: 0;
     font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
     background: var(--gray-bg);
-    color: var(--gray-dark);
     line-height: 1.5;
 }
 

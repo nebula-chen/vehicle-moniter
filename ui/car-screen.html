@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>无人车数据大屏 - 网联末端物流</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/car-screen.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+    <script src="https://webapi.amap.com/maps?v=2.0&key=0ab0f0b45664f7b5d7f3030df28d12f0&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,Map3D,AMap.Buildings"></script>
+    <script src="js/data.js"></script>
+    <script src="js/car-screen.js" defer></script>
+    <style>
+        /* 防止页面在部分容器下出现横向抖动 */
+        html, body { height: 100%; }
+    </style>
+    </head>
+<body>
+    <div class="container car-screen">
+        <!-- 左侧竖向统计栏 -->
+        <aside class="left-panels">
+            <div class="panel mini" id="panel-order-delivery">
+                <div class="panel-title">
+                    <div class="title-left">订单配送统计</div>
+                    <div class="chart-legend">
+                        <div class="legend-item"><span class="swatch swatch-trip" style="background:#66b1ff"></span><span>车次</span></div>
+                        <div class="legend-item"><span class="swatch swatch-order" style="background:#ffb86b"></span><span>订单数量</span></div>
+                        <div class="legend-item"><span class="swatch swatch-weight" style="background:#9ef27e"></span><span>配送重量</span></div>
+                    </div>
+                </div>
+                <div class="panel-body"><div id="chartOrderDelivery" class="mini-canvas"></div></div>
+            </div>
+            <div class="panel mini" id="panel-performance">
+                <div class="panel-title">
+                    <div class="title-left">效能统计</div>
+                    <div class="chart-legend">
+                        <div class="legend-item"><span class="swatch" style="background:#1a56db"></span><span>车辆耗电</span></div>
+                        <div class="legend-item"><span class="swatch" style="background:#f97316"></span><span>里程利用率</span></div>
+                        <div class="legend-item"><span class="swatch" style="background:#9ef27e"></span><span>平均耗时</span></div>
+                    </div>
+                </div>
+                <div class="panel-body"><div id="chartPerf" class="mini-canvas"></div></div>
+            </div>
+            <div class="panel mini" id="panel-efficiency">
+                <div class="panel-title">
+                    <div class="title-left">车辆安全统计</div>
+                    <div class="chart-legend">
+                        <div class="legend-item"><span class="swatch" style="background:#6b7280"></span><span>事件数量</span></div>
+                        <div class="legend-item"><span class="swatch" style="background:#ff6b6b"></span><span>误报率</span></div>
+                        <div class="legend-item"><span class="swatch" style="background:#7ee787"></span><span>已解决</span></div>
+                    </div>
+                </div>
+                <div class="panel-body"><div id="chartEff" class="mini-canvas"></div></div>
+            </div>
+            <div class="panel mini" id="panel-util">
+                <div class="panel-title">
+                    <div class="title-left">XXX统计</div>
+                    <div class="chart-legend">
+                        <div class="legend-item"><span class="swatch" style="background:#f59e42"></span><span>XXX</span></div>
+                    </div>
+                </div>
+                <div class="panel-body"><div id="chartUtil" class="mini-canvas"></div></div>
+            </div>
+        </aside>
+
+        <!-- 主体区域（顶部指标 + 地图/可视化） -->
+        <main class="center-area">
+            <section class="kpi-bar">
+                <div class="kpi-card">
+                    <div class="kpi-icon">≡</div>
+                    <div class="kpi-title">总车次</div>
+                    <div class="kpi-value" id="kpiTrips">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon">⚙</div>
+                    <div class="kpi-title">总订单</div>
+                    <div class="kpi-value" id="kpiOrders">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon">🛣</div>
+                    <div class="kpi-title">总线路</div>
+                    <div class="kpi-value" id="kpiRoutes">--</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon">🚚</div>
+                    <div class="kpi-title">在途车辆</div>
+                    <div class="kpi-value" id="kpiOnRoad">--</div>
+                </div>
+            </section>
+            <section class="visual">
+                <div id="amapCar"></div>
+            </section>
+        </main>
+
+        <!-- 右侧统计栏（今日订单雷达 + 状态、线路列表） -->
+        <aside class="right-panels">
+            <div class="panel today">
+                <div class="panel-title with-icon">今日订单</div>
+                <div class="panel-body today-body">
+                    <div id="chartTodayRadar"></div>
+                    <!-- <ul class="legend">
+                        <li><span class="dot done"></span>已完成</li>
+                        <li><span class="dot pending"></span>未完成</li>
+                        <li><span class="dot abnormal"></span>异常</li>
+                    </ul> -->
+                </div>
+            </div>
+            <div class="panel orders" id="panel-status">
+                <div class="panel-title">订单状态</div>
+                <div class="panel-body list-body">
+                    <ul id="orderStatusList" class="list"></ul>
+                </div>
+            </div>
+            <div class="panel routes" id="panel-routes">
+                <div class="panel-title">配送线路</div>
+                <div class="panel-body list-body">
+                    <ul id="routeList" class="list"></ul>
+                </div>
+            </div>
+        </aside>
+    </div>
+</body>
+</html>
+

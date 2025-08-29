@@ -1,0 +1,116 @@
+.car-screen { gap: 0; height:100%; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; color: #e6eef8; }
+
+/* 主题变量 */
+.car-screen { --bg-1: #18427c; --bg-2: rgba(4,30,60,0.60); --panel-bg: rgba(12,22,40,0.60); --glass-border: rgba(0,240,255,0.12); --accent: #ffffff; --accent-2: #DFF6FB; --text-muted: #CFEFF5; --card-shadow: 0 10px 48px rgba(0,240,255,0.10); }
+
+/* 整体背景和容器 */
+body, .car-screen { background: linear-gradient(180deg, var(--bg-1) 0%, rgba(13, 129, 179, 0.575) 100%); }
+.car-screen .left-panels, .car-screen .right-panels {  border: 1px solid rgba(0,240,255,0.08); box-shadow: var(--card-shadow); padding:2px; border-radius:12px; }
+.car-screen .left-panels { width: 18%; }
+.car-screen .right-panels { width: 18%; }
+
+/* 面板样式：玻璃感 */
+.car-screen .panel { background: linear-gradient(180degF, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:10px; border:1px solid rgba(255,255,255,0.04); box-shadow: 0 8px 30px rgba(2,10,25,0.6); margin:8px 0px; overflow:hidden; }
+.car-screen .panel .panel-title { padding:10px 12px; font-weight:700; color:var(--accent); border-bottom:1px solid rgba(255,255,255,0.03); }
+.car-screen .panel .panel-body { padding:10px; color:var(--text-muted); }
+.car-screen .panel.mini { height: 24%; display:flex; flex-direction:column; }
+.car-screen .panel.mini .panel-body{ flex:1; }
+.mini-canvas{ width:100%; height:100%; }
+
+/* 中央区域 */
+.car-screen .center-area { flex:1; display:flex; flex-direction:column; padding:4px; }
+.car-screen .kpi-bar { display:flex; gap:12px; padding:6px; background:transparent; }
+.car-screen .kpi-card { flex:1; border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:14px; cursor:default; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.03); box-shadow: 0 8px 30px rgba(2,10,25,0.6); }
+.car-screen .kpi-icon{ font-size:36px; color:var(--accent); }
+.car-screen .kpi-title{ color:#ffffff; font-weight:600; }
+.car-screen .kpi-value{ font-size:22px; font-weight:800; color:#fff; text-shadow: 0 2px 14px rgba(32,219,253,0.06); }
+
+/* 发光与脉冲动画 */
+@keyframes neonPulse {
+    0% { box-shadow: 0 0 8px rgba(0,248,255,0.12), 0 0 18px rgba(223,246,251,0.03); }
+    50% { box-shadow: 0 0 22px rgba(0,248,255,0.22), 0 0 36px rgba(223,246,251,0.06); }
+    100% { box-shadow: 0 0 8px rgba(0,248,255,0.12), 0 0 18px rgba(223,246,251,0.03); }
+}
+
+@keyframes textGlow {
+    0% { text-shadow: 0 0 8px rgba(0,248,255,0.12); }
+    50% { text-shadow: 0 0 18px rgba(0,248,255,0.22); }
+    100% { text-shadow: 0 0 8px rgba(0,248,255,0.12); }
+}
+
+/* 面板标题发光 */
+.car-screen .panel .panel-title { animation: textGlow 3.6s ease-in-out infinite; }
+
+/* 订单配送统计标题内联图例样式（在标题行显示指标标识） */
+.car-screen .panel#panel-order-delivery .panel-title { display:flex; align-items:center; justify-content:space-between; padding-right:6px; }
+.car-screen .panel#panel-order-delivery .panel-title .title-left { width: 36%; font-weight:800; color:#ffffff; }
+.car-screen .panel#panel-order-delivery .panel-title .chart-legend{ display:flex; gap:8px; align-items:center; }
+.car-screen .panel#panel-order-delivery .panel-title .chart-legend .legend-item{ display:flex; gap:6px; align-items:center; color:#ffffff; font-size:12px; }
+.car-screen .panel#panel-order-delivery .panel-title .chart-legend .swatch{ width:12px; height:8px; border-radius:2px; display:inline-block; box-shadow:0 1px 6px rgba(0,0,0,0.12); }
+
+/* 统一图表文字为白色高亮（用于 ECharts 文本覆盖） */
+.car-screen .mini-canvas { color: #ffffff; }
+
+/* 直方风格：更紧凑的柱间距，强调高度变化 */
+/* 直方样式通过 ECharts 配置控制，无需额外 CSS */
+
+/* 通用面板标题内联图例复用（除雷达面板外） */
+.car-screen .panel .panel-title { display:flex; align-items:center; justify-content:space-between; }
+.car-screen .panel .panel-title .title-left { font-weight:800; color:#ffffff; }
+.car-screen .panel .panel-title .chart-legend{ display:flex; gap:8px; align-items:center; }
+.car-screen .panel .panel-title .chart-legend .legend-item{ display:flex; gap:6px; align-items:center; color:#ffffff; font-size:12px; }
+.car-screen .panel .panel-title .chart-legend .swatch{ width:12px; height:8px; border-radius:2px; display:inline-block; box-shadow:0 1px 6px rgba(0,0,0,0.12); }
+
+/* ECharts tooltip 全局小样式（在组件内仍可覆盖） */
+.echarts-tooltip { color: #ffffff; background: rgba(0,0,0,0.6); border-radius:6px; padding:6px 8px; }
+
+/* KPI 卡片微弱发光与交互 */
+.car-screen .kpi-card { transition: transform 180ms ease, box-shadow 220ms ease, border 180ms ease; }
+.car-screen .kpi-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 18px 48px rgba(0,240,255,0.12); border:1px solid rgba(224,224,224,0.12); animation: neonPulse 4s ease-in-out infinite; }
+.car-screen .kpi-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 20px 60px rgba(0,248,255,0.14); border:1px solid rgba(223,246,251,0.14); animation: neonPulse 4s ease-in-out infinite; }
+.car-screen .kpi-card .kpi-icon { transition: transform 160ms ease; }
+.car-screen .kpi-card:hover .kpi-icon { transform: scale(1.08); }
+
+/* 地图容器：暗色 + 光晕 */
+.car-screen .visual { position:relative; flex:1; padding:6px; }
+#amapCar { width:100%; height:100%;background: transparent; }
+
+/* 右侧/左侧列表风格 */
+.car-screen .panel.orders { height: 48%; flex:1; display:flex; flex-direction:column; }
+.car-screen .panel.routes { height: 24%; flex:1; display:flex; flex-direction:column; }
+.car-screen .list-body { flex:1; overflow:auto; }
+.car-screen ul.list { list-style:none; padding:6px; margin:0; }
+.car-screen ul.list li { padding:10px 8px; border-bottom:1px solid rgba(255,255,255,0.02); font-size:16px; display:flex; gap:8px; align-items:center; justify-content:space-between; transition: background 180ms, transform 120ms; }
+.car-screen ul.list li:hover { background: rgba(0,240,255,0.03); transform: translateY(-1px); }
+.car-screen ul.list li .mono { font-family: monospace; color: #ffffff; }
+
+.car-screen .route-item { display:flex; align-items:center; gap:8px; width:100%; }
+.car-screen ul.list li.selected { background: linear-gradient(90deg, rgba(0,240,255,0.06), rgba(224,224,224,0.03)); box-shadow: inset 0 0 32px rgba(0,240,255,0.06); border-left: 4px solid var(--accent); animation: neonPulse 5s ease-in-out infinite; }
+.car-screen ul.list li.selected { background: linear-gradient(90deg, rgba(0,248,255,0.08), rgba(223,246,251,0.04)); box-shadow: inset 0 0 36px rgba(0,248,255,0.08); border-left: 4px solid var(--accent); animation: neonPulse 5s ease-in-out infinite; }
+
+.car-screen .badge { padding:4px 10px; border-radius:999px; color:#081226; font-weight:700; font-size:12px; }
+.car-screen .badge.配送中{ background: #429ef5; color:#ffffff; }
+.car-screen .badge.待取件{ background: #429ef5; color:#ffffff; }
+.car-screen .badge.已签收{ background: #22c55e; color:#ffffff; }
+.car-screen .badge.异常{ background: #ef4444; color:#ffffff; }
+
+.car-screen .today .today-body{ display:flex; align-items:center; justify-content:center; padding:8px; }
+.car-screen #chartTodayRadar{ width:100%; height:160px; }
+.car-screen .legend{ list-style:none; margin:0 0 0 8px; padding:0; }
+.car-screen .legend li{ font-size:12px; color:var(--text-muted); margin:6px 0; display:flex; align-items:center; gap:6px; }
+.car-screen .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+.car-screen .legend .dot.done{ background:#22c55e; }
+.car-screen .legend .dot.pending{ background:var(--accent); }
+.car-screen .legend .dot.abnormal{ background:#ef4444; }
+
+/* 科技感滚动条 */
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius:10px; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(0,240,255,0.20), rgba(224,224,224,0.16)); border-radius:10px; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(0,248,255,0.26), rgba(223,246,251,0.20)); border-radius:10px; }
+
+@media (max-width: 1400px){
+    .car-screen .left-panels{ width:14%; }
+    .car-screen .right-panels{ width:14%; }
+}
+

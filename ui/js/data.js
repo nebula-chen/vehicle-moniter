@@ -121,7 +121,7 @@ const plannedRoute = {
   ],
   estimatedDistanceKm: 7.2,
   estimatedTimeMin: 18,
-  description: '模拟从科学谷京东营业点出发，沿主干道经中段节点到达大学城京东站点的配送路线'
+  description: '科学谷送大学城'
 };
 
 // Try to fetch live vehicles from backend; fallback to static vehiclesData
