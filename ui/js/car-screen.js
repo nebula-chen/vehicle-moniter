@@ -106,7 +106,7 @@
         amap = new AMap.Map('amapCar', {
             zoom: 12,
             center: [106.372064, 29.534044],
-            mapStyle: "amap://styles/macaron",
+            mapStyle: "amap://styles/darkblue",
             resizeEnable: true
         });
         // amap.addControl(new AMap.Scale());
