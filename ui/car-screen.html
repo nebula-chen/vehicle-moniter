@@ -20,7 +20,7 @@
     <div class="container car-screen">
         <!-- 左侧竖向统计栏 -->
         <aside class="left-panels">
-            <div class="panel mini" id="panel-order-delivery">
+            <div class="panel mini u-neon-fixed" id="panel-order-delivery">
                 <div class="panel-title">
                     <div class="title-left">订单配送统计</div>
                     <div class="chart-legend">
@@ -31,7 +31,7 @@
                 </div>
                 <div class="panel-body"><div id="chartOrderDelivery" class="mini-canvas"></div></div>
             </div>
-            <div class="panel mini" id="panel-performance">
+            <div class="panel mini u-neon-fixed" id="panel-performance">
                 <div class="panel-title">
                     <div class="title-left">效能统计</div>
                     <div class="chart-legend">
@@ -42,7 +42,7 @@
                 </div>
                 <div class="panel-body"><div id="chartPerf" class="mini-canvas"></div></div>
             </div>
-            <div class="panel mini" id="panel-efficiency">
+            <div class="panel mini u-neon-fixed" id="panel-efficiency">
                 <div class="panel-title">
                     <div class="title-left">车辆安全统计</div>
                     <div class="chart-legend">
@@ -53,7 +53,7 @@
                 </div>
                 <div class="panel-body"><div id="chartEff" class="mini-canvas"></div></div>
             </div>
-            <div class="panel mini" id="panel-util">
+            <div class="panel mini u-neon-fixed" id="panel-util">
                 <div class="panel-title">
                     <div class="title-left">XXX统计</div>
                     <div class="chart-legend">
@@ -67,22 +67,22 @@
         <!-- 主体区域（顶部指标 + 地图/可视化） -->
         <main class="center-area">
             <section class="kpi-bar">
-                <div class="kpi-card">
+                <div class="kpi-card u-neon-fixed">
                     <div class="kpi-icon">≡</div>
                     <div class="kpi-title">总车次</div>
                     <div class="kpi-value" id="kpiTrips">--</div>
                 </div>
-                <div class="kpi-card">
+                <div class="kpi-card u-neon-fixed">
                     <div class="kpi-icon">⚙</div>
                     <div class="kpi-title">总订单</div>
                     <div class="kpi-value" id="kpiOrders">--</div>
                 </div>
-                <div class="kpi-card">
+                <div class="kpi-card u-neon-fixed">
                     <div class="kpi-icon">🛣</div>
                     <div class="kpi-title">总线路</div>
                     <div class="kpi-value" id="kpiRoutes">--</div>
                 </div>
-                <div class="kpi-card">
+                <div class="kpi-card u-neon-fixed">
                     <div class="kpi-icon">🚚</div>
                     <div class="kpi-title">在途车辆</div>
                     <div class="kpi-value" id="kpiOnRoad">--</div>
@@ -94,8 +94,8 @@
         </main>
 
         <!-- 右侧统计栏（今日订单雷达 + 状态、线路列表） -->
-        <aside class="right-panels">
-            <div class="panel today">
+        <aside class="right-panels u-shimmer">
+            <div class="panel today u-neon-fixed">
                 <div class="panel-title with-icon">今日订单</div>
                 <div class="panel-body today-body">
                     <div id="chartTodayRadar"></div>
@@ -106,13 +106,13 @@
                     </ul> -->
                 </div>
             </div>
-            <div class="panel orders" id="panel-status">
+            <div class="panel orders u-neon-fixed" id="panel-status">
                 <div class="panel-title">订单状态</div>
                 <div class="panel-body list-body">
                     <ul id="orderStatusList" class="list"></ul>
                 </div>
             </div>
-            <div class="panel routes" id="panel-routes">
+            <div class="panel routes u-neon-fixed" id="panel-routes">
                 <div class="panel-title">配送线路</div>
                 <div class="panel-body list-body">
                     <ul id="routeList" class="list"></ul>
