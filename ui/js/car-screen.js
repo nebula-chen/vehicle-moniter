@@ -189,7 +189,7 @@
     // 通用小型柱状图配置
     function smallBarOption(color, unit){
         return {
-            grid: { left: 6, right: 6, top: 8, bottom: 4, containLabel: true },
+            grid: { left: 6, right: 6, top: 8, bottom: 0, containLabel: true },
             xAxis: { type: 'category', data: ['一','二','三','四','五','六','日'], axisTick:{show:false}, axisLine:{lineStyle:{color:'#e6e8ec'}}, axisLabel:{color:'#64748b'} },
             yAxis: { type: 'value', axisLine:{show:false}, splitLine:{ lineStyle:{ color:'rgba(200,210,220,0.12)' } }, axisLabel:{ color:'#94a3b8' } },
             series: [{ type:'bar', data: [12,18,9,20,16,22,15], barWidth:'56%', itemStyle:{ color, borderRadius:[6,6,0,0] }, label:{ show:true, position:'top', color:'#111827', fontWeight:600, formatter:v=>`${v.data}${unit||''}` } }]
@@ -199,7 +199,7 @@
     // 小型图表基础风格（白色文案、隐藏 y 轴刻度、简约网格）
     function smallChartBase(){
         return {
-            grid:{ left:6, right:6, top:10, bottom:6, containLabel:true },
+            grid:{ left:6, right:6, top:8, bottom:0, containLabel:true },
             xAxis:{ type:'category', axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.18)' } }, axisLabel:{ color:'#ffffff' } },
             yAxis:[ { type:'value', axisLine:{ show:false }, axisLabel:{ show:false }, splitLine:{ lineStyle:{ color:'rgba(255,255,255,0.06)' } } } ],
             textStyle:{ color:'#ffffff' }
@@ -214,45 +214,47 @@
         charts.perf = echarts.init(document.getElementById('chartPerf'));
         charts.today = echarts.init(document.getElementById('chartTodayRadar'));
 
-        (function(){
-            const days = ['一','二','三','四','五','六','日'];
-            // 样例数据：车次、订单数量、配送重量(kg)
-            const tripCounts = [12, 18, 9, 20, 16, 22, 15];
-            const orderCounts = [120, 98, 130, 150, 110, 140, 160];
-            const weightKg = [320, 280, 410, 500, 360, 420, 480]; // 折线展示（单位：kg）
+        // 共享的数据集（从订单配送统计中提取以便在多个图表复用）
+        const days = ['一','二','三','四','五','六','日'];
+        // 样例数据：车次、订单数量、配送重量(kg)
+        const tripCounts = [12, 18, 9, 20, 16, 22, 15];
+        const orderCounts = [120, 98, 130, 150, 110, 140, 160];
+        const weightKg = [320, 280, 410, 500, 360, 420, 480]; // 折线展示（单位：kg）
 
-            const opt = {
-                grid:{ left: 8, right: 8, top: 28, bottom: 6, containLabel:true },
-                tooltip:{ trigger:'axis', axisPointer:{ type:'shadow' }, formatter: params => {
-                    let tpl = params[0].axisValueLabel + '<br/>';
-                    params.forEach(p => {
-                        if (p.seriesType === 'bar') {
-                            tpl += `${p.marker}${p.seriesName}: ${p.data}${p.seriesName==='车次' ? ' 次' : ' 单'}<br/>`;
-                        } else if (p.seriesType === 'line') {
-                            tpl += `${p.marker}${p.seriesName}: ${p.data} kg<br/>`;
-                        }
-                    });
-                    return tpl;
-                }},
-                // 在 panel 标题中显示外部 legend，ECharts 内部 legend 关闭
-                legend: false,
-                xAxis:{ type:'category', data: days, axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.18)' } }, axisLabel:{ color:'#ffffff' } },
-                // 隐藏纵轴刻度与轴线，仅保留网格参考线（可选）
-                yAxis:[
-                    { type:'value', position:'left', axisLine:{ show:false }, axisLabel:{ show:false }, splitLine:{ lineStyle:{ color:'rgba(255,255,255,0.06)' } } },
-                    { type:'value', position:'right', axisLine:{ show:false }, axisLabel:{ show:false }, splitLine:{ show:false } }
-                ],
-                // 直方效果：无空隙，直观高度对比
-                barGap: 0,
-                barCategoryGap: '20%',
-                series:[
-                    { name:'车次', type:'bar', data: tripCounts, barWidth:'28%', itemStyle:{ color:'#66b1ff', borderRadius:[6,6,0,0] }, yAxisIndex:0 },
-                    { name:'订单数量', type:'bar', data: orderCounts, barWidth:'28%', itemStyle:{ color:'#ffb86b', borderRadius:[6,6,0,0] }, yAxisIndex:0 },
-                    { name:'配送重量', type:'line', smooth:true, data: weightKg, yAxisIndex:1, itemStyle:{ color:'#9ef27e' }, lineStyle:{ width:2 }, symbol:'circle', symbolSize:6 }
-                ]
-            };
-            charts.orderDelivery.setOption(opt);
-        })();
+        // 复用的车次 series（直接从订单配送统计剪切过来）
+        const tripSeries = { name:'车次', type:'bar', data: tripCounts, barWidth:'28%', itemStyle:{ color:'#66b1ff', borderRadius:[6,6,0,0] }, yAxisIndex:0 };
+
+        const opt = {
+            grid:{ left: 6, right: 6, top: 8, bottom: 0, containLabel:true },
+            tooltip:{ trigger:'axis', axisPointer:{ type:'shadow' }, formatter: params => {
+                let tpl = params[0].axisValueLabel + '<br/>';
+                params.forEach(p => {
+                    if (p.seriesType === 'bar') {
+                        tpl += `${p.marker}${p.seriesName}: ${p.data}${p.seriesName==='车次' ? ' 次' : ' 单'}<br/>`;
+                    } else if (p.seriesType === 'line') {
+                        tpl += `${p.marker}${p.seriesName}: ${p.data} kg<br/>`;
+                    }
+                });
+                return tpl;
+            }},
+            // 在 panel 标题中显示外部 legend，ECharts 内部 legend 关闭
+            legend: false,
+            xAxis:{ type:'category', data: days, axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.18)' } }, axisLabel:{ color:'#ffffff' } },
+            // 隐藏纵轴刻度与轴线，仅保留网格参考线（可选）
+            yAxis:[
+                { type:'value', position:'left', axisLine:{ show:false }, axisLabel:{ show:false }, splitLine:{ lineStyle:{ color:'rgba(255,255,255,0.06)' } } },
+                { type:'value', position:'right', axisLine:{ show:false }, axisLabel:{ show:false }, splitLine:{ show:false } }
+            ],
+            // 直方效果：无空隙，直观高度对比
+            barGap: 0,
+            barCategoryGap: '20%',
+            series:[
+                tripSeries,
+                { name:'订单数量', type:'bar', data: orderCounts, barWidth:'28%', itemStyle:{ color:'#ffb86b', borderRadius:[6,6,0,0] }, yAxisIndex:0 },
+                { name:'配送重量', type:'line', smooth:true, data: weightKg, yAxisIndex:1, itemStyle:{ color:'#9ef27e' }, lineStyle:{ width:2 }, symbol:'circle', symbolSize:6 }
+            ]
+        };
+        charts.orderDelivery.setOption(opt);
 
         // 车辆安全统计：事件数量（直方） + 误报率（折线） + 事件成功解决占比（折线）
         const effOpt = Object.assign({}, smallChartBase(), {
@@ -274,7 +276,8 @@
             xAxis: { type: 'category', data: ['一','二','三','四','五','六','日'], axisLabel: { color: '#ffffff' } },
             series: [
                 { name: '车辆耗电', type: 'bar', data: [40,45,38,50,42,48,55], barWidth: '36%', itemStyle: { color: '#1a56db', borderRadius: [6,6,0,0] } },
-                { name: '里程利用率', type: 'line', smooth: true, data: [55,60,52,68,54,62,70], itemStyle: { color: '#f97316' }, lineStyle: { width: 2 } },
+                // 使用订单配送统计中复用的车次 series，替换原先的里程利用率指标
+                tripSeries,
                 { name: '平均耗时', type: 'line', smooth: true, data: [12,14,11,13,10,15,12], itemStyle: { color: '#9ef27e' }, lineStyle: { width: 2 } }
             ]
         });

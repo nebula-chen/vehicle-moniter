@@ -20,7 +20,7 @@ body {
 
 .container {
     display: flex;
-    height: 100vh;
+    height: 92vh;
     min-width: 1200px;
 }
 
