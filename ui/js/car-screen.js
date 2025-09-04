@@ -90,6 +90,7 @@
 
     function updateRouteListSelection(){
         const lis = document.querySelectorAll('#routeList li');
+        if (!lis || lis.length === 0) return;
         lis.forEach(li=>{
             const id = li.dataset.routeId;
             if (!id) return;
@@ -212,7 +213,6 @@
         charts.util = echarts.init(document.getElementById('chartUtil'));
         charts.eff = echarts.init(document.getElementById('chartEff'));
         charts.perf = echarts.init(document.getElementById('chartPerf'));
-        charts.today = echarts.init(document.getElementById('chartTodayRadar'));
 
         // 共享的数据集（从订单配送统计中提取以便在多个图表复用）
         const days = ['一','二','三','四','五','六','日'];
@@ -293,96 +293,15 @@
             ],
         });
         charts.util.setOption(utilOpt);
-
-        // 优化后的雷达图（更清晰的网格、冷色渐变填充、文本样式）
-        const radarOption = {
-            tooltip: { show: true, trigger: 'item' },
-            radar: {
-                center: ['50%', '60%'],
-                radius: '70%',
-                startAngle: 90,
-                splitNumber: 4,
-                shape: 'circle',
-                name: {
-                    textStyle: { color: '#DFF6FB', fontSize: 12 }
-                },
-                nameGap: 18,
-                axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 1)' } },
-                splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 1)' } },
-                splitArea: { areaStyle: { color: ['transparent','rgba(0,248,255,0.04)','transparent','rgba(0,248,255,0.02)'] } },
-                indicator: [
-                    { name: '已完成' },
-                    { name: '未完成' },
-                    { name: '异常' }
-                ]
-            },
-            series: (function(){
-                // 主区域数据
-                const mainValues = [78,60,12];
-                const mainSeries = {
-                    type: 'radar',
-                    symbol: 'none',
-                    symbolSize: 0,
-                    showSymbol: false,
-                    data: [{
-                        value: mainValues,
-                        name: '今日订单',
-                        lineStyle: { color: '#ecc03e', width: 2 },
-                        // itemStyle: { color: '#00F8FF' },
-                        areaStyle: {
-                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: 'rgba(203, 158, 24, 0.8)' },
-                                { offset: 1, color: 'rgba(190, 96, 20, 0.8)' }
-                            ], false)
-                        }
-                    }],
-                    emphasis: { lineStyle: { width: 3 } }
-                };
-
-                // 计算当前数据的最大值，作为外圈参考（避免固定常量）
-                const mainValuesArr = mainValues.slice();
-                const maxVal = Math.max.apply(null, mainValuesArr.map(v=> isFinite(v)?v:0 ));
-
-                // 外圈边界（用 maxVal 连接每个指标的最外点）
-                const outerArr = new Array(3).fill(maxVal);
-                const outerBoundary = {
-                    type: 'radar',
-                    data: [{ value: outerArr }],
-                    areaStyle: { color: 'transparent' },
-                    itemStyle: { color: 'transparent' },
-                    silent: true,
-                    z: 1
-                };
-
-                // 在每个指标最外侧绘制一个点（颜色顺序：绿 / 白 / 红）
-                const markerColors = ['#22c55e', '#DFF6FB', '#ef4444'];
-                const markerSeries = [];
-                for (let i=0;i<3;i++){
-                    const arr = new Array(3).fill(null);
-                    // 把非目标点设为 null，避免在中心绘制点
-                    arr[i] = maxVal;
-                    markerSeries.push({
-                        type: 'radar',
-                        data: [{ value: arr }],
-                        symbol: 'circle',
-                        symbolSize: 10,
-                        lineStyle: { color: 'transparent' },
-                        itemStyle: { color: markerColors[i] },
-                        silent: true,
-                        z: 3
-                    });
-                }
-                return [mainSeries, outerBoundary].concat(markerSeries);
-            })()
-        };
-        charts.today.setOption(radarOption);
     }
 
     function fillLists(){
         const statusUl = document.getElementById('orderStatusList');
         const routeUl = document.getElementById('routeList');
-        statusUl.innerHTML = '';
-        routeUl.innerHTML = '';
+        if (statusUl) statusUl.innerHTML = '';
+        // 当 routeList 已由外部（panel-prototype.js）填充时，避免清空它以免破坏交互；仅在不存在 children 时进行填充
+        const shouldFillRouteUl = routeUl && routeUl.children.length === 0;
+        if (shouldFillRouteUl) routeUl.innerHTML = '';
         const items = [
             { id:'PKG-CQ-001', status:'配送中' },
             { id:'PKG-CQ-002', status:'待取件' },
@@ -400,7 +319,7 @@
                 if (found && found.assignedVehicle) vehicleLabel = `<span class="mono" style="margin-left:8px;color:#cfeff5">${found.assignedVehicle}</span>`;
             } catch(e) {}
             li.innerHTML = `<span style="display:flex;align-items:center;gap:8px"><span class="badge ${it.status}">${it.status}</span><span class="mono">${it.id}</span>${vehicleLabel}</span>`;
-            statusUl.appendChild(li);
+            if (statusUl) statusUl.appendChild(li);
         });
 
         // 组装路线列表：优先展示来自 data.js 的测试线路（如果存在），并绑定锁定交互
@@ -416,6 +335,8 @@
         // 这里我们采用的匹配策略：如果 package.assignedVehicle 存在并且车辆当前经纬在路线 polyline 的 bbox 内则视为在途。为简单起见，先按 assignedVehicle 计数（如需精确定位可扩展）。
         const pkgByVehicle = computePackageCountsByVehicle();
         routes.forEach(r=>{
+            // 如果 routeList 已由 prototype 填充，跳过重复添加默认 routes
+            if (!shouldFillRouteUl) return;
             const li = document.createElement('li');
             li.dataset.routeId = r.id;
             // 计算在途车辆数：如果 route.id === 'R001'（来自 plannedRoute）则统计所有有 assignedVehicle 的包裹作为在途车辆数的近似
@@ -435,7 +356,7 @@
 
             // 将 id、描述、以及在途车辆计数显示在列表中
             li.innerHTML = `<div class="route-item" style="display:flex;align-items:center;width:100%"><span class="mono">${r.id}</span><span style="flex:1;margin-left:8px;color:#ffffff">${r.description || '规划路线'}</span><span style="margin-left:8px;color:#cfeff5">在途车辆: <b style=\"color:#00F8FF\">${inTransitCount}</b></span></div>`;
-            routeUl.appendChild(li);
+            if (routeUl) routeUl.appendChild(li);
             // 点击组件高亮并聚焦（阻止事件冒泡以避免 document 点击清除）
             li.addEventListener('click', (ev)=>{ ev.stopPropagation(); highlightRoute(r.id); });
         });
@@ -448,7 +369,7 @@
         renderCharts();
         initMap();
         fillLists();
-    setKPIs(computeKPIs(getVehiclesMap()));
+        setKPIs(computeKPIs(getVehiclesMap()));
         window.addEventListener('resize', onResize);
         // 点击页面空白处取消高亮（点击 route-item 会 stopPropagation）
         document.addEventListener('click', () => {

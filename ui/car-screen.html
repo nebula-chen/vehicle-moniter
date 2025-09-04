@@ -6,11 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/car-screen.css">
+    <link rel="stylesheet" href="css/panel-prototype.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+    <script src="js/echarts.min.js"></script>
     <!-- <script src="https://webapi.amap.com/maps?v=2.0&key=0ab0f0b45664f7b5d7f3030df28d12f0&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,AMap.Map3D,AMap.Buildings"></script> -->
     <script src="js/data.js"></script>
     <script src="js/car-screen.js" defer></script>
+    <script src="js/panel-prototype.js" defer></script>
 </head>
 <body>
     <div class="top-title">自动驾驶物流大脑</div>
@@ -82,30 +85,63 @@
         </div>
     </div>
 
-    <!-- 右侧统计栏（今日订单雷达 + 状态、线路列表） -->
-    <div class="right-panels u-shimmer">
-        <div class="panel today u-neon-fixed">
-            <div class="panel-title with-icon">今日订单</div>
-            <div class="panel-body today-body">
-                <div id="chartTodayRadar"></div>
-                <!-- <ul class="legend">
-                    <li><span class="dot done"></span>已完成</li>
-                    <li><span class="dot pending"></span>未完成</li>
-                    <li><span class="dot abnormal"></span>异常</li>
-                </ul> -->
+    <!-- 右侧面板 -->
+    <div class="right-panels">
+        <div class="panel u-neon-fixed" style="height: 25%;">
+            <div class="panel-title">
+                <span class="title-left">实时状态</span>
+                <div class="search-box">
+                    <input id="panelSearchInput" type="text" placeholder="输入车牌或路线">
+                    <button id="panelSearchBtn">查询</button>
+                </div>
+            </div>
+            <div class="vehicle-info">
+                <div class="vehicle-icon">
+                    <img src="image/car.png" alt="车辆图标">
+                    <div class="vehicle-plate">渝U00001</div>
+                </div>
+                <div class="vehicle-panel u-neon-fixed u-shimmer">车辆信息面板</div>
             </div>
         </div>
-        <div class="panel orders u-neon-fixed" id="panel-status">
-            <div class="panel-title">订单状态</div>
-            <div class="panel-body list-body">
-                <ul id="orderStatusList" class="list"></ul>
+        <div class="panel u-neon-fixed">
+            <div class="prototype-table-section">
+                <div style="width:48%;">
+                    <div class="route-list-header" style="display:grid;grid-template-columns:60px 1fr 84px;gap:8px;padding:6px 8px 10px 8px;color:var(--accent-2);font-weight:700;font-size:13px;">
+                        <div>编号</div>
+                        <div>配送路线</div>
+                        <div style="text-align:right;">在途车辆</div>
+                    </div>
+                    <ul id="routeList" class="prototype-route-list" style="list-style:none;padding:0;margin:0;"></ul>
+                </div>
+                <table class="prototype-table">
+                    <thead>
+                        <tr>
+                            <th colspan="2">配送订单月周期统计</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="route">高新区月度总配送</td>
+                            <td class="stat">99</td>
+                        </tr>
+                        <tr>
+                            <td class="route">大学城片区月度配送</td>
+                            <td class="stat">99</td>
+                        </tr>
+                        <tr>
+                            <td class="route">科谷片区月度配送</td>
+                            <td class="stat">99</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
-        <div class="panel routes u-neon-fixed" id="panel-routes">
-            <div class="panel-title">配送线路</div>
-            <div class="panel-body list-body">
-                <ul id="routeList" class="list"></ul>
+        <div class="panel u-neon-fixed">
+            <div class="prototype-date-section">
+                <span class="prototype-date">日期</span>
+                <button class="prototype-expand">展开选择</button>
             </div>
+            <div id="prototypeChart" class="prototype-chart">ECharts 图表</div>
         </div>
     </div>
 </body>

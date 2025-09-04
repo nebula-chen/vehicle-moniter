@@ -1,5 +1,5 @@
 /* 主题变量（极夜蓝 / 科技蓝） */
-.root { --bg-1: #041026; /* 深夜海军蓝 */ --bg-2: #072034; /* 稍浅底色（备用） */ --panel-bg: rgba(6,18,34,0.64); --glass-border: rgba(30,150,255,0.12); --accent: #DFF6FB; --accent-2: #7FD1FF; --text-muted: #9FD8F2; --card-shadow: 0 12px 56px rgba(10,120,240,0.10); --neon: rgba(66,174,255,0.16); }
+:root, .root { --bg-1: #041026; /* 深夜海军蓝 */ --bg-2: #072034; /* 稍浅底色（备用） */ --panel-bg: rgba(6,18,34,0.64); --glass-border: rgba(30,150,255,0.12); --accent: #DFF6FB; --accent-1: #0078d4; --accent-2: #7FD1FF; --text-muted: #9FD8F2; --card-shadow: 0 12px 56px rgba(10,120,240,0.10); --neon: rgba(66,174,255,0.16); }
 
 /* 整体背景和容器 */
 html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); background-size: 100% 100%; background-position:0 0; background-repeat: no-repeat; font-family: '思源黑体', 'Roboto', Inter, "Microsoft YaHei", Arial, sans-serif; }
@@ -23,6 +23,8 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     height: 94vh;
     position: absolute;
     top: 1.9vh;
+    display: flex;
+    flex-direction: column;
     padding: 2px;
     border: 1px solid rgba(127,200,255,0.05);
     box-shadow: var(--card-shadow);
@@ -37,7 +39,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     right: 2vw;
 }
 .left-panels .panel, .right-panels .panel {
-    height: 22%;
+    height: 24%;
     background: url("../image/k_1.png");
     background-size: 100% 100%;
     background-position:0 0;
@@ -50,7 +52,6 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     padding: 10px 10px 0px 6px;
     font-weight: 700;
     color: var(--accent);
-    border-bottom: 1px solid rgba(255,255,255,0.03);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -89,8 +90,6 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     100% { text-shadow: 0 0 8px rgba(0,248,255,0.12); }
 }
 
-/* 订单配送统计标题内联图例样式（在标题行显示指标标识） */
-
 /* 图表通用样式定义 */
 .left-panels .mini-canvas,
 .right-panels .mini-canvas,
@@ -98,7 +97,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     color: #ffffff;
     width: 100%;
     min-height: 120px; /* 可根据需要调整 */
-    height: 17vh;
+    height: 16vh;
     box-sizing: border-box;
 }
 .left-panels .panel .panel-title .title-left, 
@@ -107,16 +106,50 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     font-weight:800;
     color:#ffffff;
 }
+.right-panels .panel .panel-title .search-box {
+    width: 66%;
+    display:flex;
+    gap:6px;
+    align-items:center; /* 垂直居中 */
+}
+.right-panels .panel .panel-title .search-box input {
+    background:rgba(255, 255, 255, 0.66);
+    border:1px solid rgba(255,255,255,0.03);
+    border-radius:6px;
+    padding:4px 6px;
+    color:var(--text-muted);
+    outline:none;
+    width: 100%;
+    height:auto; /* 统一高度 */
+    line-height:1;
+    font-size:14px;
+    box-sizing:border-box;
+}
+.right-panels .panel .panel-title .search-box button {
+    background:var(--accent-1);
+    color:#fff;
+    border:none;
+    border-radius:6px;
+    padding:2px 6px;
+    cursor:pointer;
+    height:36px; /* 统一高度 */
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    white-space:nowrap; /* 禁止换行 */
+    font-size:14px;
+}
 .left-panels .panel .panel-title .chart-legend,
  .right-panels .panel .panel-title .chart-legend{
     display:flex;
-    gap:8px;
+    gap:4px;
     align-items:center;
 }
 .left-panels .panel .panel-title .chart-legend .legend-item,
  .right-panels .panel .panel-title .chart-legend .legend-item{
     display:flex;
-    gap:6px;
+    gap:2px;
     align-items:center;
     color:#ffffff;
     font-size:12px;
@@ -129,6 +162,43 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     display:inline-block;
     box-shadow:0 1px 6px rgba(0,0,0,0.12);
 }
+.right-panels .panel .vehicle-info{
+    height: 80%;
+    display: flex;
+    flex-direction: row;
+    padding-left: 6px;
+    padding-right: 10px;
+    column-gap: 8px;
+}
+.right-panels .panel .vehicle-info .vehicle-icon{
+    width: 36%;
+    display: flex;
+    flex-direction: column;
+    align-items:center;
+    justify-content:center;
+    gap: 8px;
+    font-size:18px;
+    font-weight:600;
+    color:var(--accent-1);
+}
+.right-panels .panel .vehicle-info .vehicle-icon img{
+    width: 100%;
+    height: auto;
+    display: flex
+}
+.right-panels .panel .vehicle-info .vehicle-icon .vehicle-plate{
+    width: 80%;
+    background:rgba(127, 255, 148, 0.83);
+    border-radius:6px;
+    padding:4px;
+    color:#ffffff;
+    text-align:center;
+}
+.right-panels .panel .vehicle-info .vehicle-panel{
+    margin: 10px 0px;
+    flex:1;background:rgba(255,255,255,0.02);border-radius:8px;padding:10px;min-height:64px;color:#cfeff5}
+/* 当 .vehicle-icon 内使用 img 时，让图片铺满并裁剪为圆形 */
+
 
 /* 列表和其他内部组件样式 */
 .right-panels .panel.orders {
@@ -286,22 +356,28 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
    ========================== */
 
 /* 透明玻璃层（更强玻璃感，带模糊） */
-.car-screen .u-transparent {
+.u-transparent {
     background-color: rgba(6,18,34,0.28) !important;
     border: 1px solid rgba(127,200,255,0.06) !important;
-    backdrop-filter: blur(6px) saturate(120%);
-    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    /* 背景模糊，适配现代浏览器 */
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    /* 默认轻微高亮边框，便于视觉聚焦 */
+    box-shadow: 0 6px 24px rgba(30,150,255,0.06) inset;
+    border-radius: 10px;
 }
 
 /* 悬浮 / 浮动效果（位移 + 阴影） */
-.car-screen .u-float { 
+.u-float { 
     transition: transform 280ms cubic-bezier(.2,.9,.3,1), box-shadow 280ms ease, border 220ms ease;
     will-change: transform, box-shadow;
 }
-.car-screen .u-float:hover {
+.u-float:hover {
     transform: translateY(-10px) scale(1.01);
     box-shadow: 0 28px 86px rgba(30,150,255,0.12), 0 6px 24px rgba(2,10,25,0.45);
     border: 1px solid rgba(127,200,255,0.10);
+    /* 悬浮时加一层边缘高亮线 */
+    outline: 1px solid rgba(127,200,255,0.06);
 }
 
 /* 流光（流动高光）动画 */
@@ -311,8 +387,8 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     60% { opacity: 0.9; }
     100% { transform: translateX(100%) skewX(-18deg); opacity: 0; }
 }
-.car-screen .u-shimmer { position: relative; overflow: hidden; }
-.car-screen .u-shimmer::after {
+.u-shimmer { overflow: hidden; }
+.u-shimmer::after {
     content: "";
     position: absolute;
     top: -40%; left: -60%;
@@ -326,19 +402,22 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 }
 
 /* 固定高光（非脉冲）：用于重要面板或选中项，常亮、不依赖鼠标 */
-.car-screen .u-highlight {
+.u-highlight {
     /* 常亮霓虹外发光 + 内部轻微光晕 */
     box-shadow: 0 14px 48px rgba(66,174,255,0.18),
                 0 0 28px rgba(127,220,255,0.06) inset;
-    border: 1px solid rgba(66,174,255,0.12);
+    border: 1px solid rgba(66,174,255,0.16);
     border-radius: 10px;
     outline: none;
     transition: box-shadow 240ms ease, transform 180ms ease;
+    /* 背景模糊以区分图层 */
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
 }
 
 /* 更醒目的固定边缘霓虹效果（始终可见，不依赖 hover/focus）
    用法：在需要强烈视觉提示的元素上添加 .u-neon-fixed */
-.car-screen .u-neon-fixed {
+.u-neon-fixed {
     position: relative;
     z-index: 0;
     border-radius: 10px;
@@ -349,28 +428,37 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
         inset 0 0 28px rgba(127,220,255,0.12),
         inset 0 0 10px rgba(30,150,255,0.10),
         0 8px 28px rgba(0,0,0,0.20);
+    /* 背景模糊以增强玻璃感 */
+    backdrop-filter: blur(12px) saturate(110%);
+    -webkit-backdrop-filter: blur(8px) saturate(110%);
+    /* 更明显的高亮边框，便于在页面中识别 */
+    outline: 1px solid rgba(127,200,255,0.06);
 }
 
 /* 边缘霓虹轮廓（用于聚焦或强调边框） */
-.car-screen .u-neon-outline { 
+.u-neon-outline { 
     position: relative;
     box-shadow: 0 6px 28px rgba(30,150,255,0.06), inset 0 0 28px rgba(66,174,255,0.02);
     border: 1px solid rgba(66,174,255,0.08);
+    border-radius: 8px;
 }
-.car-screen .u-neon-outline:focus, .car-screen .u-neon-outline:hover { 
+.u-neon-outline:focus, .u-neon-outline:hover { 
     box-shadow: 0 20px 68px rgba(30,150,255,0.14), inset 0 0 48px rgba(66,174,255,0.06);
     border: 1px solid rgba(66,174,255,0.18);
+    outline: 1px solid rgba(127,220,255,0.06);
 }
 
 /* 组合示例：将面板默认样式和新效果结合 */
-.car-screen .panel.u-transparent.u-float.u-shimmer.u-highlight { 
+.panel.u-transparent.u-float.u-shimmer.u-highlight { 
     /* 优先保留 panel 原有圆角与 overflow */
     background-clip: padding-box;
+    /* 组合时增加一层可见高亮边框 */
+    box-shadow: 0 18px 64px rgba(30,150,255,0.10), inset 0 0 20px rgba(127,220,255,0.04);
 }
 
 /* 小屏幕下禁用流光动画以节省性能 */
 @media (max-width: 900px) {
-    .car-screen .u-shimmer::after { display:none; }
+    .u-shimmer::after { display:none; }
 }
 
 
