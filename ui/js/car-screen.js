@@ -329,7 +329,7 @@
             const tr = Object.assign({}, _planned, { id: 'R001', description: _planned.description || '测试线路（由 data.js 提供）' });
             routes.push(tr);
         }
-        routes.push({ id:'R002', description:'城区环线配送' }, { id:'R003', description:'大学城夜间专线' });
+        routes.push({ id:'R002', description:'城区环线配送' }, { id:'R003', description:'大学城夜间专线' }, { id:'R004', description:'测试线路' }, { id:'测试编号', description:'测试线路' });
 
         // 计算每条路线的在途车辆数（通过 packages.assignedVehicle 与 planned route id 之间的简单匹配）
         // 这里我们采用的匹配策略：如果 package.assignedVehicle 存在并且车辆当前经纬在路线 polyline 的 bbox 内则视为在途。为简单起见，先按 assignedVehicle 计数（如需精确定位可扩展）。
@@ -355,7 +355,7 @@
             } catch(e){ inTransitCount = 0; }
 
             // 将 id、描述、以及在途车辆计数显示在列表中
-            li.innerHTML = `<div class="route-item" style="display:flex;align-items:center;width:100%"><span class="mono">${r.id}</span><span style="flex:1;margin-left:8px;color:#ffffff">${r.description || '规划路线'}</span><span style="margin-left:8px;color:#cfeff5">在途车辆: <b style=\"color:#00F8FF\">${inTransitCount}</b></span></div>`;
+            li.innerHTML = `<div class="route-item" ><span class="mono">${r.id}</span><span style="flex:1;color:#ffffff">${r.description || '规划路线'}</span><span style="margin-left:8px;color:#cfeff5"><b style=\"color:#00F8FF\">${inTransitCount}</b></span></div>`;
             if (routeUl) routeUl.appendChild(li);
             // 点击组件高亮并聚焦（阻止事件冒泡以避免 document 点击清除）
             li.addEventListener('click', (ev)=>{ ev.stopPropagation(); highlightRoute(r.id); });

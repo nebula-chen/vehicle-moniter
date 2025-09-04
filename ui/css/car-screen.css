@@ -196,17 +196,43 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 }
 .right-panels .panel .vehicle-info .vehicle-panel{
     margin: 10px 0px;
-    flex:1;background:rgba(255,255,255,0.02);border-radius:8px;padding:10px;min-height:64px;color:#cfeff5}
-/* 当 .vehicle-icon 内使用 img 时，让图片铺满并裁剪为圆形 */
+    flex:1;
+    background:rgba(255,255,255,0.02);
+    border-radius:8px;
+    padding: 4px;
+    min-height:64px;color:#cfeff5
+}
+/* 车辆信息面板详情布局 */
+.vehicle-details{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.vehicle-details .plate{font-weight:900;color:#ffffff;background:linear-gradient(90deg,#0ea5e9,#60a5fa);padding:6px 10px;border-radius:6px;font-size:14px}
+.vehicle-details .status-badge{background:linear-gradient(90deg,#34d399,#10b981);color:#062018;padding:4px 8px;border-radius:999px;font-weight:700;font-size:12px}
+.vehicle-rows{display:flex;flex-direction:column;gap:6px;}
+.vehicle-row{display:flex;justify-content:space-between;align-items:center;padding:6px;border-radius:6px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.02)}
+.vehicle-row .label{color:var(--text-muted);font-weight:700;display:flex;align-items:center;gap:8px}
+.vehicle-row .value{width: 50%;color:#ffffff;font-weight:800;text-align: center;}
+.vehicle-row i{font-size:14px;color:#7fd1ff}
 
+.right-panels .panel .table-section{
+    display: flex;
+    flex-direction: row;
+    gap:1%;
+    align-items:flex-start;margin-bottom:12px;
+}
+.right-panels .panel .table-section .route-list-header{
+    background:rgba(0, 120, 212, 0.8);
+    border-radius:6px 6px 0px 0px;
+    display:grid;
+    grid-template-columns:64% 36%;
+    gap:6px;
+    padding:8px 6px 8px 6px;
+    color:var(--accent);
+    font-weight:600;
+    font-size:12px;
+    align-items: center;
+    margin-top: 3px;
+}
 
 /* 列表和其他内部组件样式 */
-.right-panels .panel.orders {
-    height: 48%;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
 .right-panels .panel.routes {
     height: 24%;
     flex: 1;
@@ -220,13 +246,19 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 }
 .left-panels ul.list,
 .right-panels ul.list {
-    list-style: none;
-    padding: 6px;
-    margin: 0;
+    background:rgba(255,255,255,0.1);
+    border-radius:0px 0px 6px 6px;
+    padding:0px;
+    box-sizing:border-box;
+    height:80%;
+    overflow:auto;
+    border:1px solid rgba(255,255,255,0.02);
+    list-style:none;
+    margin:0px;
 }
 .left-panels ul.list li,
 .right-panels ul.list li {
-    padding: 10px 8px;
+    padding: 10px 6px;
     border-bottom: 1px solid rgba(255,255,255,0.02);
     font-size: 16px;
     display: flex;
@@ -240,11 +272,44 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     background: rgba(0,240,255,0.03);
     transform: translateY(-1px);
 }
+
+/* 隐藏可能由旧脚本生成的编号（.mono），只影响 route-list 区域 */
 .left-panels ul.list li .mono,
 .right-panels ul.list li .mono {
-    font-family: monospace;
-    color: #ffffff;
+    display: none;
 }
+
+.right-panels .panel .orders-table {
+    width:50%;
+    border-collapse:separate;
+    border-spacing:0;
+    background:rgba(255,255,255,0.02);
+    border-radius:10px;
+    overflow:hidden;
+    font-size:13px;
+    margin-top:3px;
+}
+.orders-table th,.orders-table td {
+    padding:8px 10px;
+    text-align:left;
+}
+.orders-table th {
+    background:rgba(255,255,255,0.1);
+    border-radius:6px 6px 0px 0px;
+    color:#ffffff;
+    font-weight:700;
+}
+.orders-table td {
+    background:rgba(0, 120, 212, 0.8);
+    color:#ffffff;
+    font-weight:700;
+}
+.orders-table .stat {
+    color:var(--accent-2);
+    font-weight:700;
+    text-align:right
+}
+.orders-table .route {color:#cfeff5}
 
 .left-panels .route-item,
 .right-panels .route-item {

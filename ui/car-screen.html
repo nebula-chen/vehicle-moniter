@@ -100,37 +100,65 @@
                     <img src="image/car.png" alt="车辆图标">
                     <div class="vehicle-plate">渝U00001</div>
                 </div>
-                <div class="vehicle-panel u-neon-fixed u-shimmer">车辆信息面板</div>
+                <div class="vehicle-panel u-neon-fixed u-shimmer">
+                    <div class="vehicle-details">
+                        <div class="vehicle-rows">
+                            <div class="vehicle-row">
+                                <div class="label">速度</div>
+                                <div class="value">12 km/h</div>
+                            </div>
+                            <div class="vehicle-row">
+                                <div class="label">限速</div>
+                                <div class="value">30 km/h</div>
+                            </div>
+                            <div class="vehicle-row">
+                                <div class="label">配送订单</div>
+                                <div class="value">3 件</div>
+                            </div>
+                            <div class="vehicle-row">
+                                <div class="label">当前路线</div>
+                                <div class="value">科学谷<br>→大学城</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="panel u-neon-fixed">
-            <div class="prototype-table-section">
-                <div style="width:48%;">
-                    <div class="route-list-header" style="display:grid;grid-template-columns:60px 1fr 84px;gap:8px;padding:6px 8px 10px 8px;color:var(--accent-2);font-weight:700;font-size:13px;">
-                        <div>编号</div>
-                        <div>配送路线</div>
-                        <div style="text-align:right;">在途车辆</div>
+            <div class="table-section">
+                <div style="width: 49%;">
+                    <div class="route-list-header">
+                        <div style="padding-left: 3px;">配送路线</div>
+                        <div style="text-align: right;padding-right: 6px;">车辆</div>
                     </div>
-                    <ul id="routeList" class="prototype-route-list" style="list-style:none;padding:0;margin:0;"></ul>
+                    <ul id="routeList" class="list"></ul>
                 </div>
-                <table class="prototype-table">
+                <table class="orders-table">
                     <thead>
                         <tr>
-                            <th colspan="2">配送订单月周期统计</th>
+                            <th colspan="2">配送订单月度统计</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="route">高新区月度总配送</td>
+                            <td class="route">高新区总配送</td>
                             <td class="stat">99</td>
                         </tr>
                         <tr>
-                            <td class="route">大学城片区月度配送</td>
-                            <td class="stat">99</td>
+                            <td class="route">大学城片区配送</td>
+                            <td class="stat">40</td>
                         </tr>
                         <tr>
-                            <td class="route">科谷片区月度配送</td>
-                            <td class="stat">99</td>
+                            <td class="route">科学谷片区配送</td>
+                            <td class="stat">20</td>
+                        </tr>
+                        <tr>
+                            <td class="route">白市驿片区配送</td>
+                            <td class="stat">30</td>
+                        </tr>
+                        <tr>
+                            <td class="route">XXX片区配送</td>
+                            <td class="stat">--</td>
                         </tr>
                     </tbody>
                 </table>
