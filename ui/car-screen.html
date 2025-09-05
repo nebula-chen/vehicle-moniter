@@ -13,7 +13,6 @@
     <!-- <script src="https://webapi.amap.com/maps?v=2.0&key=0ab0f0b45664f7b5d7f3030df28d12f0&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,AMap.Map3D,AMap.Buildings"></script> -->
     <script src="js/data.js"></script>
     <script src="js/car-screen.js" defer></script>
-    <script src="js/panel-prototype.js" defer></script>
 </head>
 <body>
     <div class="top-title">自动驾驶物流大脑</div>
@@ -164,12 +163,15 @@
                 </table>
             </div>
         </div>
-        <div class="panel u-neon-fixed">
-            <div class="prototype-date-section">
-                <span class="prototype-date">日期</span>
-                <button class="prototype-expand">展开选择</button>
+        <div class="panel u-neon-fixed" style="height: 36%;">
+            <div class="panel-title">
+                <span class="title-left">车辆配送记录</span>
+                <div class="search-box">
+                    <input id="vehicleOrderInput" type="text" placeholder="输入车牌或车次编号">
+                    <button id="vehicleOrderBtn">查询</button>
+                </div>
             </div>
-            <div id="prototypeChart" class="prototype-chart">ECharts 图表</div>
+            <div id="prototypeChart" class="vehicle-echarts u-neon-fixed"></div>
         </div>
     </div>
 </body>

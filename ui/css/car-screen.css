@@ -117,7 +117,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     border:1px solid rgba(255,255,255,0.03);
     border-radius:6px;
     padding:4px 6px;
-    color:var(--text-muted);
+    color:#ffffff;
     outline:none;
     width: 100%;
     height:auto; /* 统一高度 */
@@ -310,6 +310,22 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     text-align:right
 }
 .orders-table .route {color:#cfeff5}
+
+/* 右侧原型图表区域样式 */
+.prototype-date-section{ display:flex; gap:8px; align-items:center; padding:6px 8px; }
+.right-panels .panel .vehicle-echarts { 
+    width: 100%;
+    height: 28vh;
+    padding-top: 12px;
+    background:rgba(255,255,255,0.01);
+    border-radius:10px;
+    box-sizing: border-box;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:rgba(255,255,255,0.12);
+    box-shadow:0 1px 4px rgba(0,0,0,0.04);
+}
 
 .left-panels .route-item,
 .right-panels .route-item {
