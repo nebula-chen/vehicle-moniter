@@ -11,9 +11,18 @@
     --border-color: #d1d5db;
 }
 
+/* 添加本地字体定义 */
+@font-face {
+    font-family: 'YJSZ';
+    src: url("../font/yjsz.TTF") format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
 body {
     margin: 0;
-    font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
+    font-family: 'YJSZ', Arial, sans-serif;
     background: var(--gray-bg);
     line-height: 1;
 }

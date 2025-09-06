@@ -2,7 +2,7 @@
 :root, .root { --bg-1: #041026; /* 深夜海军蓝 */ --bg-2: #072034; /* 稍浅底色（备用） */ --panel-bg: rgba(6,18,34,0.64); --glass-border: rgba(30,150,255,0.12); --accent: #DFF6FB; --accent-1: #0078d4; --accent-2: #7FD1FF; --text-muted: #9FD8F2; --card-shadow: 0 12px 56px rgba(10,120,240,0.10); --neon: rgba(66,174,255,0.16); }
 
 /* 整体背景和容器 */
-html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); background-size: 100% 100%; background-position:0 0; background-repeat: no-repeat; font-family: '思源黑体', 'Roboto', Inter, "Microsoft YaHei", Arial, sans-serif; }
+html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); background-size: 100% 100%; background-position:0 0; background-repeat: no-repeat; font-family: 'YJSZ', Arial, sans-serif; }
 
 /* 标题抬头样式 */
 .top-title {
@@ -62,7 +62,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 }
 
 /* 中央区域 */
-.center-area { color: #DFF6FB; position: absolute; width: 56vw; left: 50%; transform: translateX(-50%); top: 8.8vh; }
+.center-area { color: #DFF6FB; position: absolute; width: 56vw; left: 50%; transform: translateX(-50%); top: 8.8vh; display: flex; flex-direction: column; height: calc(100vh - 8.8vh - 3vh); }
 .kpi-bar { display: flex; gap: 12px; }
 .kpi-card { background: url("../image/panel.png"); background-size: 100% 100%; background-repeat: no-repeat; flex: 1; display: flex; align-items: center; justify-content: center; gap: 20px; padding: 8px 0px; border: 1px solid rgba(255,255,255,0.03); box-shadow: 0 8px 30px rgba(2,10,25,0.6); }
 .kpi-icon { font-size: 42px; color: #9FD8F2; transition: transform 160ms ease; }
@@ -72,10 +72,44 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 .kpi-card:hover .kpi-icon { transform: scale(1.08); }
 
 /* 地图容器（同样无 .car-screen 前缀） */
-.visual { position: relative; flex: 1; padding: 6px; }
+#mapContainerEcharts { width: 100%; height: 100%; background: transparent; border-radius: 10px; }
+.visual { position: relative; flex: 1 1 auto; padding: 6px; display: flex; flex-direction: column; }
 #amapCar { width: 100%; height: 100%; background: transparent; display: block; }
 #amapCar, #amapCar > .amap-container, #amapCar > canvas, #amapCar > img { border-radius: inherit; display: block; }
 .visual { border-radius: 12px; overflow: hidden; box-shadow: 0 10px 40px rgba(2,10,25,0.45); }
+
+/* ECharts 地图容器样式（来自 map_prototype.html） */
+.mini-canvas { height: auto; min-height: 0; }
+#mapContainerEcharts { width: 100%; height: 100%; background: transparent; border-radius: 10px; display: block; flex: 1 1 auto; }
+.map-title { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 18px; text-align: center; z-index: 100; pointer-events: none; }
+
+/* 3D 浮板包装器：透视 + 轻微倾斜 + 投影 */
+.map-3d-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    perspective: 1200px; /* 视距，控制透视强度 */
+    transform-style: preserve-3d;
+}
+.map-3d-wrap > #mapContainerEcharts {
+    transform-origin: 50% 20%;
+    transition: transform 700ms cubic-bezier(.2,.9,.3,1), box-shadow 700ms ease;
+    will-change: transform;
+    box-shadow: 0 30px 80px rgba(2,10,25,0.5), inset 0 6px 30px rgba(66,174,255,0.04);
+    border-radius: 12px;
+    z-index: 2;
+}
+.map-3d-wrap::before {
+    /* 底部薄阴影，增加浮起感 */
+    content: '';
+    position: absolute;
+    left: 6%; right: 6%; bottom: -18px; height: 22px;
+    background: radial-gradient(closest-side, rgba(0,0,0,0.35), rgba(0,0,0,0.08));
+    filter: blur(8px);
+    z-index: 1;
+    border-radius: 50%;
+    pointer-events: none;
+}
 
 /* 发光与脉冲动画 */
 @keyframes neonPulse {
@@ -283,7 +317,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     width:50%;
     border-collapse:separate;
     border-spacing:0;
-    background:rgba(255,255,255,0.02);
+    background:rgba(255,255,255,0.1);
     border-radius:10px;
     overflow:hidden;
     font-size:13px;
@@ -294,13 +328,12 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     text-align:left;
 }
 .orders-table th {
-    background:rgba(255,255,255,0.1);
+    background:rgba(0, 120, 212, 0.8);
     border-radius:6px 6px 0px 0px;
     color:#ffffff;
     font-weight:700;
 }
 .orders-table td {
-    background:rgba(0, 120, 212, 0.8);
     color:#ffffff;
     font-weight:700;
 }
@@ -542,4 +575,11 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     .u-shimmer::after { display:none; }
 }
 
-
+/* 添加本地字体定义 */
+@font-face {
+    font-family: 'YJSZ';
+    src: url("../font/yjsz.TTF") format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}

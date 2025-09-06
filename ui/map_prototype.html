@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>重庆市沙坪坝区和九龙坡区地图</title>
+    <script src="js/jquery.js"></script>
+    <script src="js/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000d4a;
+            overflow: hidden;
+        }
+        #map-container {
+            width: 100%;
+            height: 100%;
+        }
+        .map-title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 24px;
+            text-align: center;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="map-title">重庆市沙坪坝区和九龙坡区地图</div>
+    <div id="map-container"></div>
+
+    <!-- 若要本地直接打开并避免 AJAX 限制，请把合并后的 GeoJSON 包装为 JS 变量并放在下列路径 -->
+    <script src="js/500106_500107_streets.js"></script>
+
+    <script>
+        // 区域数据（街道清单，用于生成示例统计/tooltip）
+        var spbStreetData = [{"id":"500106001","level":5,"name":"小龙坎街道"},{"id":"500106002","level":5,"name":"沙坪坝街道"},{"id":"500106003","level":5,"name":"渝碚路街道"},{"id":"500106004","level":5,"name":"磁器口街道"},{"id":"500106005","level":5,"name":"童家桥街道"},{"id":"500106006","level":5,"name":"石井坡街道"},{"id":"500106007","level":5,"name":"詹家溪街道"},{"id":"500106008","level":5,"name":"井口街道"},{"id":"500106009","level":5,"name":"歌乐山街道"},{"id":"500106010","level":5,"name":"山洞街道"},{"id":"500106011","level":5,"name":"新桥街道"},{"id":"500106012","level":5,"name":"天星桥街道"},{"id":"500106013","level":5,"name":"土湾街道"},{"id":"500106014","level":5,"name":"覃家岗街道"},{"id":"500106015","level":5,"name":"陈家桥街道"},{"id":"500106016","level":5,"name":"虎溪街道"},{"id":"500106017","level":5,"name":"西永街道"},{"id":"500106018","level":5,"name":"联芳街道"}];
+        var jlpStreetData = [{"id":"500107001","level":5,"name":"杨家坪街道"},{"id":"500107002","level":5,"name":"黄桷坪街道"},{"id":"500107003","level":5,"name":"谢家湾街道"},{"id":"500107004","level":5,"name":"石坪桥街道"},{"id":"500107005","level":5,"name":"石桥铺街道"},{"id":"500107006","level":5,"name":"中梁山街道"},{"id":"500107007","level":5,"name":"渝州路街道"}];
+
+        // 区级边界数据（示例已内嵌，用于注册地图）
+        var mapData = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[106.3018402,29.73924116],[106.29323854,29.70909242],[106.27654814,29.69782294],[106.283474,29.64457964],[106.26181051,29.60858657],[106.24794893,29.56214048],[106.24967588,29.53557316],[106.28985178,29.53394046],[106.30893933,29.54752834],[106.33016232,29.54662545],[106.35216862,29.56232533],[106.37887344,29.53775522],[106.40983436,29.54335501],[106.40347893,29.49548519],[106.43709665,29.49660052],[106.45611917,29.53472974],[106.47888967,29.55074815],[106.49017526,29.55750391],[106.4479603,29.58901516],[106.45794377,29.61084806],[106.44809878,29.63466999],[106.46432514,29.64857576],[106.45360314,29.67146104],[106.43889574,29.65554679],[106.42249458,29.68254316],[106.43892119,29.74616123],[106.40545062,29.74133751],[106.37874447,29.75034716],[106.36132914,29.73803333],[106.32324526,29.73110879],[106.3018402,29.73924116]]]},"properties":{"id":"500106","name":"沙坪坝区","level":4}},
+                {"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[106.39687202,29.34339914],[106.40175106,29.38356249],[106.39140208,29.3925302],[106.39438813,29.44303661],[106.44742876,29.41676885],[106.45496417,29.47508645],[106.46717947,29.50129636],[106.51107761,29.49295499],[106.51796949,29.48278127],[106.54828746,29.49013477],[106.53041609,29.50827545],[106.52852411,29.53152113],[106.50328255,29.53335718],[106.47888967,29.55074815],[106.45611917,29.53472974],[106.43709665,29.49660052],[106.40347893,29.49548519],[106.40983436,29.54335501],[106.37887344,29.53775522],[106.35216862,29.56232533],[106.33016232,29.54662545],[106.30893933,29.54752834],[106.28985178,29.53394046],[106.24967588,29.53557316],[106.25974398,29.51299388],[106.25896308,29.45435882],[106.31516335,29.43095571],[106.32516254,29.41635027],[106.31842681,29.39002266],[106.28056519,29.38795509],[106.27403909,29.35572727],[106.2577479,29.33720068],[106.28536569,29.32349673],[106.27618186,29.28977202],[106.29488693,29.25932946],[106.33591806,29.26730963],[106.38004544,29.2857344],[106.38199038,29.31506566],[106.39687202,29.34339914]]]},"properties":{"id":"500107","name":"九龙坡区","level":4}}
+            ]
+        };
+
+        // 初始化echarts实例
+        var myChart = echarts.init(document.getElementById('map-container'));
+
+        // 合并两个区的街道数据的清单（用于示例数值和 tooltip）
+        var allData = [...spbStreetData, ...jlpStreetData];
+
+        // 生成随机示例数据（街道级别，用于 visualMap 演示）
+        var data = allData.map(item => ({
+            name: item.name,
+            value: Math.round(Math.random() * 1000)
+        }));
+
+        // 基本 option：不渲染区级，先保留 visual/tooltip，后续由街道级图层替换 series
+        var baseOption = {
+            backgroundColor: '#041233',
+            tooltip: {
+                trigger: 'item',
+                formatter: function (params) {
+                    return params.name + '<br/>值：' + (params.value == null ? '-' : params.value);
+                }
+            },
+            visualMap: {
+                min: 0,
+                max: 1000,
+                right: 20,
+                bottom: 20,
+                text: ['高', '低'],
+                realtime: false,
+                calculable: true,
+                inRange: {
+                    color: ['#08306b', '#08519c', '#2171b5', '#6baed6', '#c6dbef']
+                }
+            },
+            // 先不添加任何 series；街道数据加载后会用街道 series 完整替换
+            series: []
+        };
+
+        // 把基础 option 先渲染出来（仅 visualMap/tooltip 等框架）
+        myChart.setOption(baseOption);
+
+        // 尝试载入街道级 GeoJSON 并注册为独立 map 图层：
+        // 优先使用内嵌变量 window.streetsGeoJSON（如果你后续把合并文件包装为 JS 变量并引入），
+        // 否则尝试通过 AJAX 从相对路径读取（file:// 下可能被浏览器限制），
+        // 若两者都不可用，会在页面上留下提示，建议通过本地静态服务器打开以获得完整功能。
+        function registerStreetsIfAvailable(streetsGeoJSON) {
+            try {
+                if (!streetsGeoJSON || !streetsGeoJSON.type) return false;
+                echarts.registerMap('SPB_STREETS', streetsGeoJSON);
+                // 构造街道级数据数组（用 feature.properties.name 作为匹配键）
+                var streetData = (streetsGeoJSON.features || []).map(function (f) {
+                    var name = (f.properties && (f.properties.name || f.properties.NAME || f.properties.adcode || f.properties.code)) || '未知';
+                    return {
+                        name: name,
+                        // 示例值：若需要可替换为真实统计数据或外部映射
+                        value: Math.round(Math.random() * 1000)
+                    };
+                });
+
+                // 添加街道细分图层（更细的分区），显示每个街道名称作为标签
+                var streetSeries = {
+                    name: '街道(细分)',
+                    type: 'map',
+                    map: 'SPB_STREETS',
+                    roam: true,
+                    layoutCenter: ['50%', '50%'],
+                    layoutSize: '65%',
+                    // 打开标签显示街道名称，字号和颜色适配深色背景
+                    label: {
+                        show: true,
+                        color: '#ffffff',
+                        fontSize: 12,
+                        formatter: '{b}'
+                    },
+                    data: streetData,
+                    itemStyle: {
+                        areaColor: 'rgba(255,255,255,0.02)',
+                        borderColor: 'rgba(31,181,255,0.6)',
+                        borderWidth: 0.6
+                    },
+                    emphasis: {
+                        label: { show: true, color: '#000', fontWeight: 'bold' },
+                        itemStyle: { areaColor: 'rgba(255,174,0,0.6)' }
+                    }
+                };
+
+                // 用街道图层完整替换当前的 series（确保只保留街道渲染）
+                try {
+                    var opt = myChart.getOption();
+                    opt.series = [streetSeries];
+                    myChart.setOption(opt);
+                } catch (e) {
+                    // 兜底：直接设置 series
+                    myChart.setOption({ series: [streetSeries] });
+                }
+
+                // 可选：在控制台打印已载入的街道数，便于调试
+                console.log('已注册街道图层，街道数量：', streetData.length);
+                return true;
+            } catch (e) {
+                console.error('注册街道数据失败', e);
+                return false;
+            }
+        }
+
+        // 1) 如果页面中预先定义了 window.streetsGeoJSON（例如用户把 JSON 包裹成 JS 并引入），优先使用
+        if (window.streetsGeoJSON) {
+            var ok = registerStreetsIfAvailable(window.streetsGeoJSON);
+            if (ok) console.log('使用内嵌街道 GeoJSON 渲染完成');
+        } else {
+            // 2) 尝试通过 AJAX 加载合并的 JSON 文件（路径相对项目根）
+            var streetsPath = 'geojson/gson/500106_500107_streets.json';
+            $.getJSON(streetsPath).done(function(json){
+                var ok = registerStreetsIfAvailable(json);
+                if (ok) console.log('通过 AJAX 加载街道数据并渲染完成');
+            }).fail(function(){
+                // 3) 回退：提示用户如何在本地获得最佳体验
+                console.warn('未能通过 AJAX 加载街道 GeoJSON（file:// 环境可能被浏览器限制）。若需在本地直接打开，请将合并后的 JSON 包装为一个 JS 文件（例如：var streetsGeoJSON = ...;）并在本 HTML 之前引入，或使用本地静态服务器（例如：python -m http.server）打开页面。');
+                // 可选：在地图上显示提示文字
+                var tip = document.createElement('div');
+                tip.style.position = 'absolute';
+                tip.style.left = '10px';
+                tip.style.bottom = '10px';
+                tip.style.padding = '8px 10px';
+                tip.style.background = 'rgba(0,0,0,0.5)';
+                tip.style.color = '#fff';
+                tip.style.fontSize = '12px';
+                tip.style.zIndex = 200;
+                tip.innerText = '街道数据未加载：若需离线直接打开页面，请把合并的 GeoJSON 包裹为 JS 变量并引入，或用本地服务器打开。';
+                document.body.appendChild(tip);
+            });
+        }
+
+        // 窗口大小改变时，地图大小也跟着改变
+        window.addEventListener('resize', function() { myChart.resize(); });
+    </script>
+</body>
+</html>

@@ -319,7 +319,6 @@
         // 样例数据：车次、订单数量、配送重量(kg)
         const tripCounts = [12, 18, 9, 20, 16, 22, 15];
         const orderCounts = [120, 98, 130, 150, 110, 140, 160];
-        const weightKg = [320, 280, 410, 500, 360, 420, 480]; // 折线展示（单位：kg）
 
         // 复用的车次 series（直接从订单配送统计剪切过来）
         const tripSeries = { name:'车次', type:'bar', data: tripCounts, barWidth:'28%', itemStyle:{ color:'#66b1ff', borderRadius:[6,6,0,0] }, yAxisIndex:0 };
@@ -349,9 +348,7 @@
             barGap: 0,
             barCategoryGap: '20%',
             series:[
-                tripSeries,
                 { name:'订单数量', type:'bar', data: orderCounts, barWidth:'28%', itemStyle:{ color:'#ffb86b', borderRadius:[6,6,0,0] }, yAxisIndex:0 },
-                { name:'配送重量', type:'line', smooth:true, data: weightKg, yAxisIndex:1, itemStyle:{ color:'#9ef27e' }, lineStyle:{ width:2 }, symbol:'circle', symbolSize:6 }
             ]
         };
         charts.orderDelivery.setOption(opt);
@@ -363,8 +360,6 @@
             legend: false,
             series: [
                 { name: '事件数量', type: 'bar', data: [10,8,6,8,12,4,2], barWidth: '36%', itemStyle: { color: '#6b7280', borderRadius: [6,6,0,0] } },
-                { name: '已解决', type: 'bar',  data: [8,8,5,8,11,4,2], barWidth: '36%', itemStyle: { color: '#7ee787' , borderRadius: [6,6,0,0] } },
-                { name: '误报率', type: 'line', smooth: true, data: [5,4,6,3,7,2,4], itemStyle: { color: '#ff6b6b' }, lineStyle: { width: 2 } },
             ]
         });
         charts.eff.setOption(effOpt);
@@ -375,10 +370,7 @@
             legend: false,
             xAxis: { type: 'category', data: ['一','二','三','四','五','六','日'], axisLabel: { color: '#ffffff' } },
             series: [
-                { name: '车辆耗电', type: 'bar', data: [40,45,38,50,42,48,55], barWidth: '36%', itemStyle: { color: '#1a56db', borderRadius: [6,6,0,0] } },
-                // 使用订单配送统计中复用的车次 series，替换原先的里程利用率指标
                 tripSeries,
-                { name: '平均耗时', type: 'line', smooth: true, data: [12,14,11,13,10,15,12], itemStyle: { color: '#9ef27e' }, lineStyle: { width: 2 } }
             ]
         });
         charts.perf.setOption(perfBase);
@@ -483,6 +475,195 @@
             amap.on('click', () => { clearHighlight(); });
         }
     });
+
+    // ------------------ ECharts 地图模块（从 map_prototype.html 迁移） ------------------
+    function registerStreetsIfAvailableEcharts(streetsGeoJSON, chartInstance) {
+        try {
+            if (!streetsGeoJSON || !streetsGeoJSON.type) return false;
+            // 只保留以下指定的街道/镇名称，其他区域将被隐藏
+            var allowedNames = [
+                '虎溪街道','香炉山街道','西永街道','曾家镇','含谷镇','金凤镇','白市驿镇','走马镇','石板镇','巴福镇'
+            ];
+
+            // 过滤 features：根据 properties 中可能存在的多个字段匹配名称（name/NAME/NAME_CH 等）
+            var rawFiltered = (streetsGeoJSON.features || []).filter(function(f){
+                var props = f.properties || {};
+                var cand = (props.name || props.NAME || props.NAME_CH || props.adname || props.adcode || '').toString().trim();
+                if (!cand) return false;
+                // 精确匹配（不区分大小写）
+                return allowedNames.some(function(n){ return n.toLowerCase() === cand.toLowerCase(); });
+            });
+
+            // 去重：有的 GeoJSON 在合并/导出时可能包含重复的几何（导致地图上重复描边）
+            // 优先用规范化名称去重，若名称缺失则用 geometry 的 JSON 签名去重，最后回退为整个 feature 的字符串。
+            var seen = Object.create(null);
+            var features = [];
+            rawFiltered.forEach(function(f){
+                var props = f.properties || {};
+                var nameKey = (props.name || props.NAME || props.adname || props.adcode || '').toString().trim().toLowerCase();
+                var geomKey = '';
+                try {
+                    if (f.geometry && typeof f.geometry.coordinates !== 'undefined') geomKey = JSON.stringify(f.geometry.coordinates);
+                } catch (e) { geomKey = ''; }
+                var key = nameKey || geomKey;
+                if (!key) {
+                    try { key = JSON.stringify(f); } catch (e) { key = Math.random().toString(36).slice(2); }
+                }
+                if (!seen[key]) { seen[key] = true; features.push(f); }
+            });
+
+            // 构造仅包含允许且已去重的 features 的新 GeoJSON（以免破坏原始对象）
+            var filteredGeo = Object.assign({}, streetsGeoJSON, { features: features });
+
+            if (!features.length) {
+                console.warn('未在提供的 GeoJSON 中找到任何允许的街道名称，地图将不会显示区域。');
+            }
+
+            echarts.registerMap('SPB_STREETS', filteredGeo);
+            var streetData = (filteredGeo.features || []).map(function (f) {
+                var name = (f.properties && (f.properties.name || f.properties.NAME || f.properties.adname)) || '未知';
+                return { name: name, value: Math.round(Math.random() * 1000) };
+            });
+
+            // // 直接使用完整的 GeoJSON（不做过滤）
+            // echarts.registerMap('SPB_STREETS', streetsGeoJSON);
+            // var streetData = (streetsGeoJSON.features || []).map(function (f) {
+            //     var name = (f.properties && (f.properties.name || f.properties.NAME || f.properties.adcode || f.properties.code)) || '未知';
+            //     return { name: name, value: Math.round(Math.random() * 1000) };
+            // });
+
+            // 先只设置街道系列（避免在多次调用时重复添加图层）
+            var baseOption = {
+                backgroundColor: 'transparent',
+                geo: {
+                    map: 'SPB_STREETS',
+                    aspectScale: 0.85,
+                    layoutCenter: ['50%', '50%'],
+                    layoutSize: '99%',
+                    itemStyle: {
+                        normal: {
+                            // 使用统一深蓝色填充，替换原来的线性渐变
+                            shadowColor: '#276fce',
+                            shadowOffsetX: 0,
+                            shadowOffsetY: 15,
+                            opacity: 0.5
+                        },
+                        emphasis: {
+                            areaColor: '#276fce',
+                        }
+                    },
+                },
+                series: [
+                    {
+                        name: '街道',
+                        type: 'map',
+                        mapType: 'SPB_STREETS',
+                        aspectScale: 0.85,
+                        layoutCenter: ["50%", "50%"], //地图位置
+                        layoutSize: '99%',
+                        zoom: 1, //当前视角的缩放比例
+                        // roam: true, //是否开启平游或缩放
+                        scaleLimit: { //滚轮缩放的极限控制
+                            min: 1,
+                            max: 2
+                        },
+                        itemStyle: {
+                            normal: {
+                                areaColor: 'rgba(4, 34, 80, 1)',
+                                borderColor: 'rgba(80,160,255,0.75)',
+                                borderWidth: 1.2,
+                            },
+                            emphasis: {
+                                areaColor: '#02102b',
+                                label: {
+                                    color: "#fff"
+                                }
+                            }
+                        },
+                    },
+                ]
+            };
+
+            // 设置基础街道图层
+            chartInstance.setOption(baseOption);
+
+            console.log('已注册街道图层，街道数量：', streetData.length);
+            return true;
+        } catch (e) {
+            console.error('注册街道数据失败', e);
+            return false;
+        }
+    }
+
+    function initEchartsMap(){
+        if (typeof echarts === 'undefined') return;
+        var el = document.getElementById('mapContainerEcharts');
+        if (!el) return;
+        // wrapper used for 3d transform and float
+        var wrap = el.closest('.map-3d-wrap') || null;
+        var myChart = echarts.init(el);
+        var baseOption = {
+            backgroundColor: 'transparent',
+            // tooltip: { trigger: 'item', formatter: function (params) { return params.name + '<br/>值：' + (params.value == null ? '-' : params.value); } },
+            // visualMap intentionally removed to hide the value legend / color bar in the corner
+            series: []
+        };
+        myChart.setOption(baseOption);
+
+        // 尝试使用全局变量或本地文件
+        if (window.streetsGeoJSON) {
+            registerStreetsIfAvailableEcharts(window.streetsGeoJSON, myChart);
+        } else if (window.streets && typeof streets === 'object') {
+            registerStreetsIfAvailableEcharts(window.streets, myChart);
+        } else if (window.__SPB_STREETS__ && typeof window.__SPB_STREETS__ === 'object') {
+            registerStreetsIfAvailableEcharts(window.__SPB_STREETS__, myChart);
+        } else {
+            // 尝试用内置合并文件（如果项目提供了 js/500106_500107_streets.js 并将其暴露为 streetsGeoJSON）
+            if (window.streetsGeoJSON) {
+                registerStreetsIfAvailableEcharts(window.streetsGeoJSON, myChart);
+            } else {
+                // 也可能项目引入了 js/500106_500107_streets.js，该文件在 car-screen.html 已被引入，尝试 registry
+                try {
+                    // fetch fallback JSON (will fail on file:// in some browsers), kept for server usage
+                    fetch('geojson/gson/500106_500107_streets.json').then(function(r){ if (!r.ok) throw new Error('no'); return r.json(); }).then(function(json){ registerStreetsIfAvailableEcharts(json, myChart); }).catch(function(){
+                        // 最后尝试查找 any global that looks like GeoJSON
+                        var candidate = window.streetsGeoJSON || window.SPB_STREETS || window.__SPB_STREETS__ || null;
+                        if (candidate) registerStreetsIfAvailableEcharts(candidate, myChart);
+                        else {
+                            console.warn('街道 GeoJSON 未找到，若需离线查看请把合并的 GeoJSON 包为 JS 变量并在页面前引入，或使用本地静态服务器。');
+                            var tip = document.createElement('div');
+                            tip.style.position = 'absolute';
+                            tip.style.left = '10px';
+                            tip.style.bottom = '10px';
+                            tip.style.padding = '8px 10px';
+                            tip.style.background = 'rgba(0,0,0,0.5)';
+                            tip.style.color = '#fff';
+                            tip.style.fontSize = '12px';
+                            tip.style.zIndex = 200;
+                            tip.innerText = '街道数据未加载：若需离线直接打开，请把合并的 GeoJSON 包裹为 JS 变量并引入，或用本地服务器打开页面。';
+                            el.appendChild(tip);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('尝试加载街道数据失败', e);
+                }
+            }
+        }
+
+        // resize on window resize
+        window.addEventListener('resize', function(){ try{ myChart.resize(); }catch(e){} });
+
+        // 启动微浮动动画（如果存在 wrapper）
+        try {
+            if (wrap) {
+                // 延迟一点再启用动画，避免页面 load 时抖动
+                setTimeout(function(){ wrap.classList.add('map-float'); }, 200);
+            }
+        } catch(e){}
+    }
+
+    // 在 DOMContentLoaded 时也初始化 ECharts 地图
+    try { if (document.readyState === 'complete' || document.readyState === 'interactive') { setTimeout(initEchartsMap, 50); } else { window.addEventListener('DOMContentLoaded', initEchartsMap); } } catch(e){}
 })();
 
 
