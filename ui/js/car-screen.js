@@ -477,6 +477,114 @@
     });
 
     // ------------------ ECharts 地图模块（从 map_prototype.html 迁移） ------------------
+    // ===== Helpers: 投影与几何旋转 =====
+    // Web-Mercator projection helpers (EPSG:3857) - works well for local/城市级别的旋转
+    function lonLatToMercator(lon, lat){
+        var x = lon * 20037508.34 / 180.0;
+        var y = Math.log(Math.tan((90 + lat) * Math.PI / 360.0)) / (Math.PI / 180.0);
+        y = y * 20037508.34 / 180.0;
+        return [x, y];
+    }
+    function mercatorToLonLat(x, y){
+        var lon = (x / 20037508.34) * 180.0;
+        var lat = (y / 20037508.34) * 180.0;
+        lat = 180 / Math.PI * (2 * Math.atan(Math.exp(lat * Math.PI / 180.0)) - Math.PI / 2.0);
+        return [lon, lat];
+    }
+
+    // 先保留简单的绕 Z 轴旋转点方法，但主要使用下面的复合变换：Yaw(绕Z) + Pitch(绕X) + 透视投影
+    function rotatePointAround(centerXY, pointXY, angleRad){
+        var dx = pointXY[0] - centerXY[0];
+        var dy = pointXY[1] - centerXY[1];
+        var cosA = Math.cos(angleRad);
+        var sinA = Math.sin(angleRad);
+        var rx = centerXY[0] + (dx * cosA - dy * sinA);
+        var ry = centerXY[1] + (dx * sinA + dy * cosA);
+        return [rx, ry];
+    }
+
+    // 复合变换：先绕中心做 yaw (Z 轴) 旋转，再围绕 X 轴做 pitch（俯仰），最后用简单的透视投影将 z 映射到平面
+    function transformPointYawPitch(centerXY, pointXY, yawRad, pitchRad, viewerDist){
+        // 平移到中心
+        var dx = pointXY[0] - centerXY[0];
+        var dy = pointXY[1] - centerXY[1];
+        var dz = 0;
+        // yaw (绕 Z轴)
+        var cosy = Math.cos(yawRad || 0), siny = Math.sin(yawRad || 0);
+        var x1 = dx * cosy - dy * siny;
+        var y1 = dx * siny + dy * cosy;
+        var z1 = dz;
+        // pitch (绕 X 轴)
+        var cosp = Math.cos(pitchRad || 0), sinp = Math.sin(pitchRad || 0);
+        var x2 = x1;
+        var y2 = y1 * cosp - z1 * sinp;
+        var z2 = y1 * sinp + z1 * cosp;
+        // 透视投影，viewerDist 为视距（单位与 mercator 相同），避免穿透
+        var D = (typeof viewerDist === 'number' && isFinite(viewerDist)) ? viewerDist : 2e7;
+        var denom = (D - z2) || D; // 防止除以 0
+        var scale = D / denom;
+        var xp = centerXY[0] + x2 * scale;
+        var yp = centerXY[1] + y2 * scale;
+        return [xp, yp];
+    }
+
+    // 递归变换 coordinates 数组（支持 Point/LineString/Polygon 等任意深度）
+    function transformCoordsRecursive(coords, centerXY, yawRad, pitchRad, viewerDist){
+        if (!Array.isArray(coords)) return coords;
+        // 如果是数字坐标点 [lon, lat]
+        if (typeof coords[0] === 'number' && typeof coords[1] === 'number'){
+            var p = lonLatToMercator(+coords[0], +coords[1]);
+            var tp = transformPointYawPitch(centerXY, p, yawRad, pitchRad, viewerDist);
+            var ll = mercatorToLonLat(tp[0], tp[1]);
+            return [ +ll[0], +ll[1] ];
+        }
+        // 否则递归映射子数组
+        return coords.map(function(c){ return transformCoordsRecursive(c, centerXY, yawRad, pitchRad, viewerDist); });
+    }
+
+    function computeGeoJSONBBoxCenter(geo){
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        function scanCoords(coords){
+            if (!Array.isArray(coords)) return;
+            if (typeof coords[0] === 'number' && typeof coords[1] === 'number'){
+                var lon = +coords[0], lat = +coords[1];
+                if (isFinite(lon) && isFinite(lat)){
+                    minX = Math.min(minX, lon); minY = Math.min(minY, lat);
+                    maxX = Math.max(maxX, lon); maxY = Math.max(maxY, lat);
+                }
+                return;
+            }
+            for (var i=0;i<coords.length;i++) scanCoords(coords[i]);
+        }
+        if (geo && geo.features && Array.isArray(geo.features)){
+            geo.features.forEach(function(f){ if (f && f.geometry && f.geometry.coordinates) scanCoords(f.geometry.coordinates); });
+        }
+        if (!isFinite(minX)) return null;
+        return [ (minX+maxX)/2, (minY+maxY)/2 ];
+    }
+
+    // 将 GeoJSON 的所有几何绕指定经纬中心旋转 angleDeg（度）并返回新对象（不修改原对象）
+    // 旋转/俯仰 GeoJSON：centerLonLat 为轴心经纬，angleDeg 为 yaw（绕Z），pitchDeg 为绕X 的俯仰角度，viewerDist 为透视视距（mercator 单位）
+    function rotateGeoJSON(geojson, centerLonLat, angleDeg, pitchDeg, viewerDist){
+        if (!geojson) return geojson;
+        var yawRad = (angleDeg || 0) * Math.PI / 180.0;
+        var pitchRad = (pitchDeg || 0) * Math.PI / 180.0;
+        var centerMerc = lonLatToMercator(centerLonLat[0], centerLonLat[1]);
+        // deep clone minimal structure while mapping coordinates
+        var out = Object.assign({}, geojson);
+        out.features = (geojson.features || []).map(function(f){
+            var nf = Object.assign({}, f);
+            if (f.geometry){
+                nf.geometry = Object.assign({}, f.geometry);
+                try {
+                    nf.geometry.coordinates = transformCoordsRecursive(f.geometry.coordinates, centerMerc, yawRad, pitchRad, viewerDist);
+                } catch(e){ nf.geometry.coordinates = f.geometry.coordinates; }
+            }
+            return nf;
+        });
+        return out;
+    }
+
     function registerStreetsIfAvailableEcharts(streetsGeoJSON, chartInstance) {
         try {
             if (!streetsGeoJSON || !streetsGeoJSON.type) return false;
@@ -532,21 +640,25 @@
             //     return { name: name, value: Math.round(Math.random() * 1000) };
             // });
 
-            // 先只设置街道系列（避免在多次调用时重复添加图层）
+            // 在注册到 ECharts 之前对几何做旋转（以几何 bbox 中心为轴，避免旋转文本/label）
+            var center = computeGeoJSONBBoxCenter(filteredGeo) || [106.372064, 29.534044];
+            // 旋转角度：45度（顺时针为正）
+            var rotatedGeo = rotateGeoJSON(filteredGeo, center, -45, pitchDeg=45);
+
+            // 先只设置街道系列（避免在多次调用时重复添加图层）；使用旋转后的 geojson
             var baseOption = {
                 backgroundColor: 'transparent',
                 geo: {
                     map: 'SPB_STREETS',
                     aspectScale: 0.85,
                     layoutCenter: ['50%', '50%'],
-                    layoutSize: '99%',
+                    layoutSize: '108%',
                     itemStyle: {
                         normal: {
-                            // 使用统一深蓝色填充，替换原来的线性渐变
                             shadowColor: '#276fce',
                             shadowOffsetX: 0,
                             shadowOffsetY: 15,
-                            opacity: 0.5
+                            opacity: 0.88
                         },
                         emphasis: {
                             areaColor: '#276fce',
@@ -560,7 +672,7 @@
                         mapType: 'SPB_STREETS',
                         aspectScale: 0.85,
                         layoutCenter: ["50%", "50%"], //地图位置
-                        layoutSize: '99%',
+                        layoutSize: '108%',
                         zoom: 1, //当前视角的缩放比例
                         // roam: true, //是否开启平游或缩放
                         scaleLimit: { //滚轮缩放的极限控制
@@ -584,9 +696,11 @@
                 ]
             };
 
-            // 设置基础街道图层
+            // 注册旋转后的地图并设置基础街道图层
+            echarts.registerMap('SPB_STREETS', rotatedGeo);
             chartInstance.setOption(baseOption);
 
+            // 旧方案（DOM 旋转）已替换为几何旋转；保留作为视觉备选（注释）
             console.log('已注册街道图层，街道数量：', streetData.length);
             return true;
         } catch (e) {
