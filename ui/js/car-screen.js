@@ -643,7 +643,15 @@
             // 在注册到 ECharts 之前对几何做旋转（以几何 bbox 中心为轴，避免旋转文本/label）
             var center = computeGeoJSONBBoxCenter(filteredGeo) || [106.372064, 29.534044];
             // 旋转角度：45度（顺时针为正）
-            var rotatedGeo = rotateGeoJSON(filteredGeo, center, -45, pitchDeg=45);
+            var yawDeg = -45;
+            var pitchDeg = 45;
+            var rotatedGeo = rotateGeoJSON(filteredGeo, center, yawDeg, pitchDeg);
+
+            // 将变换参数导出到全局，供路线与车辆的坐标变换复用，保证完全一致的轴测对齐
+            try {
+                var centerMerc = lonLatToMercator(center[0], center[1]);
+                window.__SPB_MAP_TRANSFORM__ = { center: center, centerMerc: centerMerc, yawDeg: yawDeg, pitchDeg: pitchDeg };
+            } catch(e){}
 
             // 先只设置街道系列（避免在多次调用时重复添加图层）；使用旋转后的 geojson
             var baseOption = {
@@ -653,6 +661,8 @@
                     aspectScale: 0.85,
                     layoutCenter: ['50%', '50%'],
                     layoutSize: '108%',
+                    // 禁止鼠标事件与 hover 效果，避免高亮遮挡路线
+                    silent: true,
                     itemStyle: {
                         normal: {
                             shadowColor: '#276fce',
@@ -660,8 +670,10 @@
                             shadowOffsetY: 15,
                             opacity: 0.88
                         },
+                        // 取消鼠标悬停时的视觉高亮与 label 显示（保持与 normal 一致）
                         emphasis: {
-                            areaColor: '#276fce',
+                            areaColor: 'rgba(4, 34, 80, 1)',
+                            label: { show: false }
                         }
                     },
                 },
@@ -679,6 +691,8 @@
                             min: 1,
                             max: 2
                         },
+                        // 禁止鼠标事件与 hover 高亮，降低 zlevel 以让路线/车辆始终绘制在上方
+                        silent: true,
                         itemStyle: {
                             normal: {
                                 areaColor: 'rgba(4, 34, 80, 1)',
@@ -686,12 +700,12 @@
                                 borderWidth: 1.2,
                             },
                             emphasis: {
-                                areaColor: '#02102b',
-                                label: {
-                                    color: "#fff"
-                                }
+                                areaColor: 'rgba(4, 34, 80, 1)',
+                                label: { show: false }
                             }
                         },
+                        // 不在街道图层显示 tooltip
+                        tooltip: { show: false },
                     },
                 ]
             };
@@ -774,6 +788,216 @@
                 setTimeout(function(){ wrap.classList.add('map-float'); }, 200);
             }
         } catch(e){}
+        
+        // 启动车辆与线路的 ECharts 层（绘制并每秒更新位置）
+        try {
+            startEchartsVehicleLayer(myChart);
+        } catch(e) {
+            console.warn('启动 ECharts 车辆层失败', e);
+        }
+    }
+
+    // 构建路线 series（优先使用 getPlannedRoute）
+    function buildRouteSeries(){
+        var planned = getPlannedRoute();
+        if (!planned || !Array.isArray(planned.waypoints) || planned.waypoints.length < 2) return [];
+        var coords = (planned.waypoints||[]).map(function(p){ return [ +p.lng, +p.lat ]; });
+        // apply same yaw/pitch transform used for streets so lines 对齐轴测地图
+        try {
+            var tp = getMapTransformParams();
+            var centerMerc = tp.centerMerc;
+            var yaw = tp.yawRad; var pitch = tp.pitchRad; var vd = tp.viewerDist;
+            // 使用 transformCoordsRecursive 对单点数组进行批量变换，保持与 rotateGeoJSON 一致
+            coords = coords.map(function(ll){
+                try {
+                    var transformed = transformCoordsRecursive([ll], centerMerc, yaw, pitch, vd);
+                    return transformed && transformed[0] ? [ +transformed[0][0], +transformed[0][1] ] : ll;
+                } catch(e){ return ll; }
+            });
+        } catch(e){ /* ignore and use raw coords */ }
+        return [{
+            name: 'routes',
+            id: 'routes',
+            type: 'lines',
+            coordinateSystem: 'geo',
+            polyline: true,
+            silent: false,
+            effect: { show: true, period: 6, trailLength: 0.2, symbol: 'arrow', symbolSize: 6, color: '#00F8FF' },
+            lineStyle: { color: '#6B48FF', width: 3, opacity: 0.9, curveness: 0.1 },
+            data: [ { coords: coords, routeId: planned.id || 'R001' } ]
+        }];
+    }
+
+    // 构建车辆点位 series（从全局 vehiclesData 中读取）
+    function buildVehicleSeries(vehicleMap){
+        var list = [];
+        try {
+            var vals = Object.values(vehicleMap || {});
+            var tp = getMapTransformParams();
+            var cMerc = tp.centerMerc; var yaw = tp.yawRad; var pitch = tp.pitchRad; var vd = tp.viewerDist;
+            vals.forEach(function(v){
+                if (!v) return;
+                if (!isFinite(+v.lng) || !isFinite(+v.lat)) return;
+                try {
+                    var transformed = transformCoordsRecursive([[+v.lng, +v.lat]], cMerc, yaw, pitch, vd);
+                    var out = transformed && transformed[0] ? transformed[0] : [+v.lng, +v.lat];
+                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +out[0], +out[1], +(v.speed||0) ], raw: v });
+                } catch(e){
+                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +v.lng, +v.lat, +(v.speed||0) ], raw: v });
+                }
+            });
+        } catch(e){}
+        return [{
+            name: 'vehicles',
+            id: 'vehicles',
+            type: 'scatter',
+            coordinateSystem: 'geo',
+            z: 999,
+            symbol: 'circle',
+            symbolSize: 12,
+            label: { show: true, formatter: '{b}', color: '#ffffff', position: 'right' },
+            itemStyle: { color: '#ff6b6b' },
+            data: list
+        }];
+    }
+
+    // 尝试从页面可用的 GeoJSON 中恢复用于几何旋转的参数（center, yaw, pitch）
+    function getMapTransformParams(){
+        try {
+            var g = window.__SPB_MAP_TRANSFORM__;
+            if (g && g.centerMerc && (typeof g.yawDeg !== 'undefined')){
+                var yawRad = (g.yawDeg||0) * Math.PI / 180.0;
+                var pitchRad = (g.pitchDeg||0) * Math.PI / 180.0;
+                return { centerMerc: g.centerMerc, yawRad: yawRad, pitchRad: pitchRad, viewerDist: undefined };
+            }
+        } catch(e){}
+        var candidate = window.streetsGeoJSON || window.streets || window.__SPB_STREETS__ || null;
+        var center = null;
+        if (candidate && candidate.features) center = computeGeoJSONBBoxCenter(candidate);
+        if (!center) center = [106.372064, 29.534044];
+        var yawDeg = -45; // fallback
+        var pitchDeg = 45;
+        var yawRad = (yawDeg||0) * Math.PI / 180.0;
+        var pitchRad = (pitchDeg||0) * Math.PI / 180.0;
+        var centerMerc = lonLatToMercator(center[0], center[1]);
+        return { centerMerc: centerMerc, yawRad: yawRad, pitchRad: pitchRad, viewerDist: undefined };
+    }
+
+    // 简单沿路线模拟移动（当全局 vehiclesData 没有实时坐标时使用）
+    var _simState = {};
+    function ensureSimForVehicle(id, routeCoords){
+        if (!_simState[id]){
+            _simState[id] = { idx:0, progress:0 }; // idx 到下一点的索引，progress 0..1
+        }
+        var s = _simState[id];
+        // 保证 idx 在范围内
+        if (!routeCoords || routeCoords.length < 2) { s.idx = 0; s.progress = 0; }
+        else { s.idx = Math.max(0, Math.min(s.idx, routeCoords.length - 2)); }
+        return s;
+    }
+
+    function stepSimulateAlongRoute(routeCoords, state, stepFrac){
+        if (!routeCoords || routeCoords.length < 2) return routeCoords && routeCoords[0] || [0,0];
+        stepFrac = stepFrac || 0.02; // 每次前进的比例
+        state.progress += stepFrac;
+        while (state.progress >= 1 && state.idx < routeCoords.length - 2){ state.progress -= 1; state.idx++; }
+        if (state.progress >=1) state.progress = 1;
+        var a = routeCoords[state.idx];
+        var b = routeCoords[Math.min(state.idx+1, routeCoords.length-1)];
+        var lng = a[0] + (b[0]-a[0]) * state.progress;
+        var lat = a[1] + (b[1]-a[1]) * state.progress;
+        return [lng, lat];
+    }
+
+    // 启动车辆/线路 layer 并每秒更新（优先使用全局 vehiclesData，否则沿 plannedRoute 模拟）
+    function startEchartsVehicleLayer(chartInstance){
+        if (!chartInstance) return;
+        var planned = getPlannedRoute();
+        var routeCoords = (planned && Array.isArray(planned.waypoints)) ? planned.waypoints.map(function(p){ return [ +p.lng, +p.lat ]; }) : null;
+
+        // 初始绘制
+        var vehicleMap = getVehiclesMap() || {};
+        var routeSeries = buildRouteSeries();
+        var vehicleSeries = buildVehicleSeries(vehicleMap);
+        // set initial series: 保持 geo/map 已注册，向图上添加 lines + scatter
+        // 不要覆盖已有 series（例如街道 map），而是 append 或更新特定 id 的 series
+        // 若已有 series，使用 replaceMerge 更新相应 id，否则追加
+        // 将新 series 追加到已有 series（不替换已有的街道 map series）
+        chartInstance.setOption({ series: [].concat(routeSeries, vehicleSeries) });
+
+        // 每秒更新一次位置
+        var tick = function(){
+            try {
+                var vm = getVehiclesMap() || {};
+                var vehData = [];
+                var vals = Object.values(vm || {});
+                // 获取地图变换参数（centerMerc, yawRad, pitchRad）并将原始 routeCoords 转换为绘制坐标
+                var tp = getMapTransformParams();
+                var cMerc = tp.centerMerc; var yaw = tp.yawRad; var pitch = tp.pitchRad; var vd = tp.viewerDist;
+                var transformedRouteCoords = null;
+                if (routeCoords) {
+                    try {
+                        // transformCoordsRecursive supports nested arrays, so pass each point as [lon,lat]
+                        transformedRouteCoords = routeCoords.map(function(ll){
+                            try {
+                                var transformed = transformCoordsRecursive([ll], cMerc, yaw, pitch, vd);
+                                return transformed && transformed[0] ? [ +transformed[0][0], +transformed[0][1] ] : ll;
+                            } catch(e){ return ll; }
+                        });
+                    } catch(e){ transformedRouteCoords = routeCoords; }
+                }
+
+                if (vals.length === 0 && routeCoords) {
+                    // 没有真实车辆数据：生成一些模拟车辆（最多 6 个），仿真点也要转换
+                    for (var i=0;i<6;i++){
+                        var vid = 'SIM-' + (i+1);
+                        ensureSimForVehicle(vid, routeCoords);
+                        var pRaw = stepSimulateAlongRoute(routeCoords, _simState[vid], 0.04 + Math.random()*0.02);
+                        var plotted = pRaw;
+                        try {
+                            var m2 = lonLatToMercator(pRaw[0], pRaw[1]);
+                            var t2 = transformPointYawPitch(cMerc, m2, yaw, pitch, vd);
+                            var out2 = mercatorToLonLat(t2[0], t2[1]);
+                            plotted = [ +out2[0], +out2[1] ];
+                        } catch(e){}
+                        vehData.push({ name: vid, value: [plotted[0], plotted[1], Math.round(20 + Math.random()*40)] });
+                    }
+                } else {
+                    // 有车辆数据：优先使用经纬；若某车辆缺失坐标且有 routeCoords，则沿 route 模拟
+                    vals.forEach(function(v){
+                        var id = v.id || v.vehicleId || ('veh_' + Math.random().toString(36).slice(2,6));
+                        if (isFinite(+v.lng) && isFinite(+v.lat)) {
+                            var plotted = [ +v.lng, +v.lat ];
+                            try {
+                                var transformed = transformCoordsRecursive([[+v.lng, +v.lat]], cMerc, yaw, pitch, vd);
+                                if (transformed && transformed[0]) plotted = [ +transformed[0][0], +transformed[0][1] ];
+                            } catch(e){}
+                            vehData.push({ name: id, value: [ plotted[0], plotted[1], +(v.speed||0) ] });
+                        } else if (routeCoords) {
+                            ensureSimForVehicle(id, routeCoords);
+                            var pRaw2 = stepSimulateAlongRoute(routeCoords, _simState[id], 0.02 + Math.random()*0.02);
+                            var plotted2 = pRaw2;
+                            try {
+                                var transformed2 = transformCoordsRecursive([pRaw2], cMerc, yaw, pitch, vd);
+                                if (transformed2 && transformed2[0]) plotted2 = [ +transformed2[0][0], +transformed2[0][1] ];
+                            } catch(e){}
+                            vehData.push({ name: id, value: [ plotted2[0], plotted2[1], +(v.speed||0) ] });
+                        }
+                    });
+                }
+
+                // apply update: update by id/name to avoid 替换掉已有的街道 series
+                chartInstance.setOption({ series: [
+                    { id: 'routes', name: 'routes', data: (transformedRouteCoords ? [ { coords: transformedRouteCoords } ] : (routeCoords ? [ { coords: routeCoords } ] : [])) },
+                    { id: 'vehicles', name: 'vehicles', data: vehData }
+                ] });
+            } catch(e){ console.warn('更新车辆数据失败', e); }
+        };
+        // 立刻跑一次再启动定时
+        tick();
+        var timer = setInterval(tick, 1000);
+        // 清理：当页面卸载时取消定时器
+        try { window.addEventListener('beforeunload', function(){ clearInterval(timer); }); } catch(e){}
     }
 
     // 在 DOMContentLoaded 时也初始化 ECharts 地图
