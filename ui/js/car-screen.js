@@ -1,5 +1,7 @@
 (function(){
     const charts = {};
+    // 使用本地图片资源（图片位于 `ui/image/car1.png`）
+    const VEHICLE_ICON = 'image/car1.png';
     let amap, vehicleMarkers = {};
     const routePolylines = {};
     const routeStartEnd = {};
@@ -461,10 +463,10 @@
         renderCharts();
         initMap();
         fillLists();
-    setKPIs(computeKPIs(getVehiclesMap()));
-    // initialize trip chart and show default or mock data
-    initTripChart();
-    updateTripChartForRoute(null, null);
+        setKPIs(computeKPIs(getVehiclesMap()));
+        // initialize trip chart and show default or mock data
+        initTripChart();
+        updateTripChartForRoute(null, null);
         window.addEventListener('resize', onResize);
         // 点击页面空白处取消高亮（点击 route-item 会 stopPropagation）
         document.addEventListener('click', () => {
@@ -841,9 +843,11 @@
                 try {
                     var transformed = transformCoordsRecursive([[+v.lng, +v.lat]], cMerc, yaw, pitch, vd);
                     var out = transformed && transformed[0] ? transformed[0] : [+v.lng, +v.lat];
-                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +out[0], +out[1], +(v.speed||0) ], raw: v });
+                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +out[0], +out[1], +(v.speed||0) ], raw: v,
+                        symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
                 } catch(e){
-                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +v.lng, +v.lat, +(v.speed||0) ], raw: v });
+                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +v.lng, +v.lat, +(v.speed||0) ], raw: v,
+                        symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
                 }
             });
         } catch(e){}
@@ -852,11 +856,22 @@
             id: 'vehicles',
             type: 'scatter',
             coordinateSystem: 'geo',
-            z: 999,
-            symbol: 'circle',
-            symbolSize: 12,
-            label: { show: true, formatter: '{b}', color: '#ffffff', position: 'right' },
-            itemStyle: { color: '#ff6b6b' },
+            // put vehicles on a higher zlevel so they always render above streets
+            zlevel: 10,
+            z: 1200,
+            symbol: 'image://' + VEHICLE_ICON,
+            symbolSize: 32,
+            label: { show: false, formatter: '{b}', color: '#ffffff', position: 'right' },
+            itemStyle: { borderColor: '#fff', borderWidth: 1, shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.35)' },
+            tooltip: { 
+                show: true,
+                formatter: function (p) {
+                    var v = p && p.data && p.data.raw ? p.data.raw : null;
+                    var speed = (p && p.value && p.value[2]) ? p.value[2] : (v && v.speed ? v.speed : '-');
+                    var pkgCnt = (v && v.id) ? (computePackageCountsByVehicle()[v.id] || 0) : 0;
+                    return '<div style="font-size:12px;color:#fff">' + (p.name||'车辆') + '<br/>速度: ' + speed + ' km/h<br/>件数: ' + pkgCnt + '</div>';
+                }
+            },
             data: list
         }];
     }
@@ -918,7 +933,11 @@
         // 初始绘制
         var vehicleMap = getVehiclesMap() || {};
         var routeSeries = buildRouteSeries();
+        // 使用可复用的数据引用以减少内存分配
+        var vehiclesDataRef = [];
         var vehicleSeries = buildVehicleSeries(vehicleMap);
+        // replace series data with our reusable reference if vehicleSeries exists
+        if (vehicleSeries && vehicleSeries[0]) vehicleSeries[0].data = vehiclesDataRef;
         // set initial series: 保持 geo/map 已注册，向图上添加 lines + scatter
         // 不要覆盖已有 series（例如街道 map），而是 append 或更新特定 id 的 series
         // 若已有 series，使用 replaceMerge 更新相应 id，否则追加
@@ -929,7 +948,8 @@
         var tick = function(){
             try {
                 var vm = getVehiclesMap() || {};
-                var vehData = [];
+                // 我们将就地更新 vehiclesDataRef（复用引用）以降低 GC
+                vehiclesDataRef.length = 0;
                 var vals = Object.values(vm || {});
                 // 获取地图变换参数（centerMerc, yawRad, pitchRad）并将原始 routeCoords 转换为绘制坐标
                 var tp = getMapTransformParams();
@@ -960,7 +980,8 @@
                             var out2 = mercatorToLonLat(t2[0], t2[1]);
                             plotted = [ +out2[0], +out2[1] ];
                         } catch(e){}
-                        vehData.push({ name: vid, value: [plotted[0], plotted[1], Math.round(20 + Math.random()*40)] });
+                        vehiclesDataRef.push({ name: vid, value: [plotted[0], plotted[1], Math.round(20 + Math.random()*40)],
+                            raw: { id: vid }, symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: 0 });
                     }
                 } else {
                     // 有车辆数据：优先使用经纬；若某车辆缺失坐标且有 routeCoords，则沿 route 模拟
@@ -972,7 +993,8 @@
                                 var transformed = transformCoordsRecursive([[+v.lng, +v.lat]], cMerc, yaw, pitch, vd);
                                 if (transformed && transformed[0]) plotted = [ +transformed[0][0], +transformed[0][1] ];
                             } catch(e){}
-                            vehData.push({ name: id, value: [ plotted[0], plotted[1], +(v.speed||0) ] });
+                            vehiclesDataRef.push({ name: id, value: [ plotted[0], plotted[1], +(v.speed||0) ],
+                                raw: v, symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
                         } else if (routeCoords) {
                             ensureSimForVehicle(id, routeCoords);
                             var pRaw2 = stepSimulateAlongRoute(routeCoords, _simState[id], 0.02 + Math.random()*0.02);
@@ -981,15 +1003,16 @@
                                 var transformed2 = transformCoordsRecursive([pRaw2], cMerc, yaw, pitch, vd);
                                 if (transformed2 && transformed2[0]) plotted2 = [ +transformed2[0][0], +transformed2[0][1] ];
                             } catch(e){}
-                            vehData.push({ name: id, value: [ plotted2[0], plotted2[1], +(v.speed||0) ] });
+                            vehiclesDataRef.push({ name: id, value: [ plotted2[0], plotted2[1], +(v.speed||0) ],
+                                raw: v, symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
                         }
                     });
                 }
 
-                // apply update: update by id/name to avoid 替换掉已有的街道 series
+                // 仅更新 vehicles series（使用复用的数据引用），减少重绘开销
                 chartInstance.setOption({ series: [
                     { id: 'routes', name: 'routes', data: (transformedRouteCoords ? [ { coords: transformedRouteCoords } ] : (routeCoords ? [ { coords: routeCoords } ] : [])) },
-                    { id: 'vehicles', name: 'vehicles', data: vehData }
+                    { id: 'vehicles', name: 'vehicles', data: vehiclesDataRef }
                 ] });
             } catch(e){ console.warn('更新车辆数据失败', e); }
         };
