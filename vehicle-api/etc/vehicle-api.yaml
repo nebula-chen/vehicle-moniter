@@ -4,11 +4,11 @@ Port: 8666
 TCPPort: ":6000"
 InfluxDBConfig:
   Host: "influxdb"
-  Port: "8086"
+  Port: "8066"
   User: admin
   Password: "12345678"
   Token: tK0BKAx693FyWtedXb7LCH6GSQXQs6cof-niW3lDoABVcir7BRVHSwXUDFEjuqlZpVS8PKINXdDscLhiyfg==
-  Bucket: drone_data
+  Bucket: vehicle_data
   Org: sysu
   RetentionPolicy: autogen
   Precision: s
