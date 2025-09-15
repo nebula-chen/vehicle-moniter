@@ -23,6 +23,7 @@
 body {
     margin: 0;
     font-family: 'YJSZ', Arial, sans-serif;
+    font-size: 62.5%;
     background: var(--gray-bg);
     line-height: 1;
 }

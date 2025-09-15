@@ -1,0 +1,70 @@
+/* 网格员信息面板样式，配色与大屏主题一致 */
+.grid-panel {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  background: #101c2cbb;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(30,150,255,0.10);
+  font-family: 'Microsoft YaHei', Arial, sans-serif;
+  color: #e3f2fd;
+  padding: 18px 18px 12px 18px;
+  border: 1.5px solid #1e90ff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.grid-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.grid-panel-title {
+  font-size: 2.4em;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: #4fc3f7;
+}
+.grid-panel-distribution {
+  font-size: 0.98rem;
+  color: #fff;
+  background: #1976d2;
+  border-radius: 4px;
+  padding: 2px 10px;
+  border: 1px solid #4fc3f7;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.grid-panel-distribution:hover {
+  background: #1565c0;
+}
+.grid-panel-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #16243a;
+  border: 1.5px solid #233a5a;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  margin-bottom: 2px;
+}
+.grid-panel-row:last-child {
+  margin-bottom: 0;
+}
+.grid-panel-label {
+  color: #90caf9;
+  font-size: 0.98rem;
+}
+.grid-panel-value {
+  font-weight: bold;
+  font-size: 1.3em;
+  color: #fffb00;
+}
+@media (max-width: 400px) {
+  .grid-panel {
+    width: 98vw;
+    padding: 10px 2vw;
+  }
+}

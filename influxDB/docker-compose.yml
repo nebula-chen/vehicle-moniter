@@ -4,7 +4,7 @@ services:
     container_name: influxdb
     restart: always
     ports:
-      - "8066:8066"       # HTTP API 端口
+      - "8086:8086"       # HTTP API 端口
     networks:
       - my-network        # 加入自定义网络
     volumes:

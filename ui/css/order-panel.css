@@ -1,0 +1,110 @@
+/* order-panel styles extracted from order-panel.html */
+:root {
+  --main-border: 3px solid #ff9900;
+  --box-border: 3px solid #222;
+  --radius: 16px;
+  --bg: #fff;
+  --font-main: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+.order-panel {
+  max-width: 1100px;
+  margin: 0; /* let container control margins */
+  background: var(--bg);
+  border: var(--main-border);
+  border-radius: var(--radius);
+  padding: 16px 16px 12px 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+}
+.order-panel .summary {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.summary-box, .status-box {
+  flex: 1;
+  background: #faf6f0;
+  border: var(--box-border);
+  border-radius: var(--radius);
+  padding: 12px 0;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #666;
+  letter-spacing: 1px;
+}
+.status-box {
+  background: #f5faff;
+  color: #1a4d7a;
+}
+/* .summary-label, .status-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #666;
+  margin-right: 6px;
+} */
+/* .summary-num, .status-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #ff9900;
+  margin-left: 2px;
+  letter-spacing: 1px;
+  line-height: 1;
+} */
+.order-panel .status {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.status-box {
+  flex: 1;
+  background: #f5faff;
+  border: var(--box-border);
+  border-radius: var(--radius);
+  padding: 12px 0;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a4d7a;
+  letter-spacing: 2px;
+}
+.order-table-wrap {
+  background: #fff;
+  border: var(--box-border);
+  border-radius: var(--radius);
+  overflow: auto;
+  margin-top: 8px;
+}
+table.order-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.95rem;
+  color: #222;
+}
+table.order-table th, table.order-table td {
+  border-right: 2px solid #bbb;
+  border-bottom: 2px solid #bbb;
+  padding: 10px 8px;
+  text-align: center;
+  background: #fff;
+}
+table.order-table th {
+  background: #f3f3f3;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #333;
+}
+table.order-table tr:last-child td {
+  border-bottom: none;
+}
+table.order-table th:last-child, table.order-table td:last-child {
+  border-right: none;
+}
+@media (max-width: 900px) {
+  .order-panel { padding: 12px; }
+  .order-panel .summary, .order-panel .status { flex-direction: column; gap: 12px; }
+}

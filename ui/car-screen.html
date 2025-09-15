@@ -6,172 +6,162 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/car-screen.css">
+    <link rel="stylesheet" href="css/order-panel.css">
+    <link rel="stylesheet" href="css/warehouse-panel.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
     <script src="js/echarts.min.js"></script>
-    <!-- <script src="https://webapi.amap.com/maps?v=2.0&key=0ab0f0b45664f7b5d7f3030df28d12f0&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,AMap.Map3D,AMap.Buildings"></script> -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=c9e8ebb3f3c7ada55ea870cd341d7c36&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,AMap.Map3D,AMap.Buildings"></script>
     <script src="js/data.js"></script>
     <script src="js/500106_500107_streets.js"></script>
     <script src="js/car-screen.js" defer></script>
+    <script src="js/order-panel.js" defer></script>
+    <script src="js/floating-panel.js" defer></script>
 </head>
 <body>
     <div class="top-title">自动驾驶物流大脑</div>
 
     <!-- 左侧竖向统计栏 -->
     <div class="left-panels">
-        <div class="panel u-neon-fixed" id="panel-order-delivery">
-            <div class="panel-title">
-                <div class="title-left">订单统计</div>
-                <div class="chart-legend">
-                    <div class="legend-item"><span class="swatch swatch-order" style="background:#ffb86b"></span><span>订单数量</span></div>
+        <div class="panel u-neon-fixed" style="height: 40%;">
+            <!-- 指标区域：两个容器上下排列，每个容器内指标同行 -->
+            <div style="display: flex; margin: 0px 6px; margin-top: 16px;">
+                <div class="metric" id="order-total">
+                    <span class="summary-label">订单总数</span>
+                    <span class="summary-num">--</span>
+                </div>
+                <div class="metric" id="order-finished">
+                    <span class="summary-label">今日已完成</span>
+                    <span class="summary-num">--</span>
                 </div>
             </div>
-            <div class="panel-body"><div id="chartOrderDelivery" class="mini-canvas"></div></div>
+            <div style="display: flex; margin: 0px 6px; margin-top: 8px;">
+                <div class="metric" id="order-intransit">
+                    <span class="summary-label">在途订单</span>
+                    <span class="summary-num">12</span>
+                </div>
+                <div class="metric" id="order-abnormal">
+                    <span class="summary-label">异常订单</span>
+                    <span class="summary-num">2</span>
+                </div>
+            </div>
+
+            <div class="table-section">
+                <!-- 列表表头：订单、类型、目的地、状态、备注 -->
+                <div class="route-list-header" style="width: 96.5%; margin-top:12px; display: flex;">
+                        <div style="flex:1.2; text-align:center;">订单</div>
+                        <div style="flex:1; text-align:center;">类型</div>
+                        <div style="flex:2; text-align:center;">目的地</div>
+                        <div style="flex:1; text-align:center;">状态</div>
+                        <div style="flex:2; text-align:center;">备注</div>
+                </div>
+                <ul id="orderListChart" class="list"></ul>
+            </div>
         </div>
-        <div class="panel u-neon-fixed" id="panel-performance">
-            <div class="panel-title">
-                <div class="title-left">车次统计</div>
-                <div class="chart-legend">
-                    <div class="legend-item"><span class="swatch swatch-trip" style="background:#66b1ff"></span><span>车次</span></div>
+        <div class="panel u-neon-fixed" id="warehouse-panel" style="height: 50%; padding: 18px 12px 12px 12px; display: flex; flex-direction: column; gap: 10px;">
+            <!-- 优化后的仓库门店信息面板组件 -->
+            <div class="warehouse-panel-top" style="display: flex; gap: 6px; justify-content: space-between; margin: 10px 8px;">
+                <div class="warehouse-stat laser-blue-border">
+                    <div class="warehouse-stat-title"><i class="bi bi-building"></i> 仓库</div>
+                    <div class="warehouse-stat-value" id="warehouse-total">50</div>
+                </div>
+                <div class="warehouse-stat laser-blue-border">
+                    <div class="warehouse-stat-title"><i class="bi bi-shop"></i> 驿站/门店</div>
+                    <div class="warehouse-stat-value" id="station-store-total">18</div>
                 </div>
             </div>
-            <div class="panel-body"><div id="chartPerf" class="mini-canvas"></div></div>
-        </div>
-        <div class="panel u-neon-fixed" id="panel-efficiency">
-            <div class="panel-title">
-                <div class="title-left">车辆安全统计</div>
-                <div class="chart-legend">
-                    <div class="legend-item"><span class="swatch" style="background:#6b7280"></span><span>事件数量</span></div>
+            <div class="warehouse-panel-body" style="flex:1; display:flex;">
+                <div class="warehouse-map-card" style="flex:1; display:flex; flex-direction:column; box-shadow:0 4px 24px rgba(30,150,255,0.10); border-radius:12px; padding:10px 10px 6px 10px;">
+                    <div class="warehouse-map-card-title" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                        <span><i class="bi bi-geo-alt"></i>站点预览</span>
+                            <span class="warehouse-map-legend" style="font-size:12px; display:flex; align-items:center; gap:10px;">
+                                <span class="legend-dot warehouse" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#4fc3f7; margin-right:3px;"></span>仓库
+                                <span class="legend-dot store" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#fffb00; margin-right:3px;"></span>驿站/门店
+                            </span>
+                        </span>
+                    </div>
+                    <div id="warehouse-mini-map" class="warehouse-mini-map" style="flex:1; min-height:120px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); overflow:hidden;"></div>
                 </div>
             </div>
-            <div class="panel-body"><div id="chartEff" class="mini-canvas"></div></div>
-        </div>
-        <div class="panel u-neon-fixed" id="panel-util">
-            <div class="panel-title">
-                <div class="title-left">经济性统计</div>
-                <div class="chart-legend">
-                    <div class="legend-item"><span class="swatch" style="background:#f59e42"></span><span>百公里耗电</span></div>
-                </div>
-            </div>
-            <div class="panel-body"><div id="chartUtil" class="mini-canvas"></div></div>
+            <script src="js/warehouse-panel.js"></script>
         </div>
     </div>
 
-    <!-- 主体区域（顶部指标 + 地图/可视化） -->
+    <!-- 主体区域（地图/可视化） -->
     <div class="center-area">
-        <div class="kpi-bar">
-            <div class="kpi-card u-neon-fixed">
-                <div class="kpi-icon">≡</div>
-                <div class="kpi-title">总车次<div class="kpi-value" id="kpiTrips">--</div></div>
+        <!-- 浮动选择面板，左上角 -->
+        <div class="floating-panel" id="floatingPanel">
+            <div class="panel-group">
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="cargo"> 货物
+                </label>
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="vehicle"> 车辆
+                </label>
             </div>
-            <div class="kpi-card u-neon-fixed">
-                <div class="kpi-icon">⚙</div>
-                <div class="kpi-title">总订单<div class="kpi-value" id="kpiOrders">--</div></div>
+            <div class="panel-group">
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="warehouse"> 仓库
+                </label>
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="store"> 门店
+                </label>
             </div>
-            <div class="kpi-card u-neon-fixed">
-                <div class="kpi-icon">🛣</div>
-                <div class="kpi-title">总线路<div class="kpi-value" id="kpiRoutes">--</div></div>
+            <div class="panel-group panel-label">
+                总线路 <span class="panel-value">999</span>
             </div>
-            <div class="kpi-card u-neon-fixed">
-                <div class="kpi-icon">🚚</div>
-                <div class="kpi-title">在途车辆<div class="kpi-value" id="kpiOnRoad">--</div></div>
+            <div class="panel-group">
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="operation"> 运营线路
+                    <span class="panel-value">99</span>
+                </label>
+            </div>
+            <div class="panel-group">
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="test"> 测试线路
+                    <span class="panel-value">99</span>
+                </label>
             </div>
         </div>
-        <div class="visual" style="margin-top:12px;">
+        <div class="visual">
             <div class="map-3d-wrap">
-                <div id="mapContainerEcharts" class="mini-canvas"></div>
+                <div id="mapContainerEcharts" class="mini-canvas placeholder">
+                    <!-- 高德地图容器：initMap() 将在此容器中初始化 AMap 实例 -->
+                    <div id="amapCar" style="width:100%;height:100%;"></div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- 右侧面板 -->
     <div class="right-panels">
-        <div class="panel u-neon-fixed" style="height: 25%;">
-            <div class="panel-title">
-                <span class="title-left">实时状态</span>
-                <div class="search-box">
-                    <input id="panelSearchInput" type="text" placeholder="输入车牌或路线">
-                    <button id="panelSearchBtn">查询</button>
-                </div>
-            </div>
-            <div class="vehicle-info">
-                <div class="vehicle-icon">
-                    <img src="image/car.png" alt="车辆图标">
-                    <div class="vehicle-plate">渝U00001</div>
-                </div>
-                <div class="vehicle-panel u-neon-fixed u-shimmer">
-                    <div class="vehicle-details">
-                        <div class="vehicle-rows">
-                            <div class="vehicle-row">
-                                <div class="label">速度</div>
-                                <div class="value">12 km/h</div>
-                            </div>
-                            <div class="vehicle-row">
-                                <div class="label">限速</div>
-                                <div class="value">30 km/h</div>
-                            </div>
-                            <div class="vehicle-row">
-                                <div class="label">配送订单</div>
-                                <div class="value">3 件</div>
-                            </div>
-                            <div class="vehicle-row">
-                                <div class="label">当前路线</div>
-                                <div class="value">科学谷<br>→大学城</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="panel u-neon-fixed" style="height: 58%;">
+            <!-- 车辆信息子面板嵌入 -->
+            <div id="vehicle-info-panel-container"></div>
+            <link rel="stylesheet" href="css/vehicle-info-panel.css">
+            <script src="js/vehicle-info-panel.js"></script>
         </div>
-        <div class="panel u-neon-fixed">
-            <div class="table-section">
-                <div style="width: 49%;">
-                    <div class="route-list-header">
-                        <div style="padding-left: 3px;">配送路线</div>
-                        <div style="text-align: right;padding-right: 6px;">车辆</div>
-                    </div>
-                    <ul id="routeList" class="list"></ul>
+        <div class="panel u-neon-fixed" style="height: 36%; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 0;">
+            <!-- 网格员信息面板组件 -->
+            <link rel="stylesheet" href="css/grid-info-panel.css">
+            <div class="grid-panel" id="grid-info-panel">
+                <div class="grid-panel-header">
+                    <span class="grid-panel-title">网格员总数：<span class="grid-panel-value" id="total-count">99</span></span>
+                    <button class="grid-panel-distribution" id="distribution-btn">网格分布</button>
                 </div>
-                <table class="orders-table">
-                    <thead>
-                        <tr>
-                            <th colspan="2">实时配送统计</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td class="route">高新区总配送</td>
-                            <td class="stat">99</td>
-                        </tr>
-                        <tr>
-                            <td class="route">大学城片区配送</td>
-                            <td class="stat">40</td>
-                        </tr>
-                        <tr>
-                            <td class="route">科学谷片区配送</td>
-                            <td class="stat">20</td>
-                        </tr>
-                        <tr>
-                            <td class="route">白市驿片区配送</td>
-                            <td class="stat">30</td>
-                        </tr>
-                        <tr>
-                            <td class="route">XXX片区配送</td>
-                            <td class="stat">--</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        <div class="panel u-neon-fixed" style="height: 36%;">
-            <div class="panel-title">
-                <span class="title-left">车辆配送记录</span>
-                <div class="search-box">
-                    <input id="vehicleOrderInput" type="text" placeholder="输入车牌或车次编号">
-                    <button id="vehicleOrderBtn">查询</button>
+                <div class="grid-panel-row">
+                    <span class="grid-panel-label">在线网格员数：</span>
+                    <span class="grid-panel-value" id="online-count">60</span>
+                </div>
+                <div class="grid-panel-row">
+                    <span class="grid-panel-label">空闲网格员数：</span>
+                    <span class="grid-panel-value" id="idle-count">20</span>
+                </div>
+                <div class="grid-panel-row">
+                    <span class="grid-panel-label">离线网格员数：</span>
+                    <span class="grid-panel-value" id="offline-count">5</span>
                 </div>
             </div>
-            <div id="prototypeChart" class="vehicle-echarts u-neon-fixed"></div>
+            <script src="js/grid-info-panel.js"></script>
         </div>
     </div>
 </body>

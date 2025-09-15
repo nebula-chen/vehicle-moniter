@@ -1,3 +1,91 @@
+/* 浮动选择面板样式 */
+.floating-panel {
+    background: #dff6fbcc;
+    border: 1px solid rgba(127,200,255,0.05);
+    box-shadow: var(--card-shadow);
+    border-radius: 12px;
+    position: absolute;
+    padding: 6px;
+    top: 1%;
+    left: 1%;
+    z-index: 1200;
+    font-family: 'YJSZ', Arial, sans-serif;
+    user-select: none;
+}
+.floating-panel:hover {
+    box-shadow: 0 8px 48px rgba(30,150,255,0.22);
+}
+.floating-panel .panel-group {
+    display: flex;
+    flex-direction: row;
+    gap: 18px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+.floating-panel .panel-group.panel-label {
+    font-weight: 700;
+    font-size: 20px;
+    color: #18304a;
+    justify-content: flex-start;
+    margin-bottom: 8px;
+}
+.floating-panel .panel-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0078d4;
+    margin-left: 8px;
+}
+.floating-panel .panel-checkbox {
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 500;
+    color: #18304a;
+    cursor: pointer;
+    gap: 2px;
+}
+
+/* 当某项被关闭时，视觉上降低饱和度并轻微缩小以提示不可见 */
+.floating-panel .panel-checkbox.panel-off {
+    opacity: 0.56;
+    transform: scale(0.98);
+    filter: grayscale(20%);
+}
+.floating-panel .panel-checkbox.panel-off:hover { background: rgba(127,209,255,0.04); }
+
+/* 切换时的短动画（用于 ripple/反馈） */
+.panel-toggle-anim { transition: transform 160ms ease, opacity 160ms ease; }
+.panel-toggle-anim { transform-origin: left center; }
+.floating-panel .panel-checkbox input[type="checkbox"] {
+    accent-color: #0078d4;
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+    cursor: pointer;
+}
+.floating-panel .panel-checkbox input[type="checkbox"]:checked + span,
+.floating-panel .panel-checkbox input[type="checkbox"]:checked {
+    color: #0078d4;
+    font-weight: 700;
+}
+.floating-panel .panel-checkbox:hover {
+    background: rgba(127,209,255,0.08);
+}
+@media (max-width: 900px) {
+    .floating-panel {
+        left: 8px;
+        top: 8px;
+        padding: 10px 12px 8px 12px;
+        min-width: 120px;
+        font-size: 15px;
+    }
+    .floating-panel .panel-group {
+        gap: 8px;
+    }
+    .floating-panel .panel-value {
+        font-size: 14px;
+    }
+}
 /* 主题变量（极夜蓝 / 科技蓝） */
 :root, .root { --bg-1: #041026; /* 深夜海军蓝 */ --bg-2: #072034; /* 稍浅底色（备用） */ --panel-bg: rgba(6,18,34,0.64); --glass-border: rgba(30,150,255,0.12); --accent: #DFF6FB; --accent-1: #0078d4; --accent-2: #7FD1FF; --text-muted: #9FD8F2; --card-shadow: 0 12px 56px rgba(10,120,240,0.10); --neon: rgba(66,174,255,0.16); }
 
@@ -88,27 +176,21 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     position: relative;
     width: 100%;
     height: 100%;
-    perspective: 1200px; /* 视距，控制透视强度 */
-    transform-style: preserve-3d;
+    /* 暂时去掉复杂的 3D/透视效果，保留简单占位样式，便于后续接入其他地图接口 */
+    transform-style: flat;
 }
 .map-3d-wrap > #mapContainerEcharts {
-    transform-origin: 50% 20%;
-    transition: transform 700ms cubic-bezier(.2,.9,.3,1), box-shadow 700ms ease;
-    will-change: transform;
-    box-shadow: 0 30px 80px rgba(2,10,25,0.5), inset 0 6px 30px rgba(66,174,255,0.04);
-    border-radius: 12px;
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+    border: 1px dashed rgba(255,255,255,0.06);
+    background: linear-gradient(180deg, rgba(4,16,32,0.4), rgba(4,16,32,0.2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted, #9FD8F2);
+    font-size: 14px;
     z-index: 2;
-}
-.map-3d-wrap::before {
-    /* 底部薄阴影，增加浮起感 */
-    content: '';
-    position: absolute;
-    left: 6%; right: 6%; bottom: -18px; height: 22px;
-    background: radial-gradient(closest-side, rgba(0,0,0,0.35), rgba(0,0,0,0.08));
-    filter: blur(8px);
-    z-index: 1;
-    border-radius: 50%;
-    pointer-events: none;
 }
 
 /* 发光与脉冲动画 */
@@ -139,6 +221,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     width: 36%;
     font-weight:800;
     color:#ffffff;
+    font-size: 2em;
 }
 .right-panels .panel .panel-title .search-box {
     width: 66%;
@@ -246,13 +329,16 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 .vehicle-row .value{width: 50%;color:#ffffff;font-weight:800;text-align: center;}
 .vehicle-row i{font-size:14px;color:#7fd1ff}
 
-.right-panels .panel .table-section{
-    display: flex;
+.left-panels .panel .table-section,
+.right-panels .panel .table-section {
     flex-direction: row;
     gap:1%;
-    align-items:flex-start;margin-bottom:12px;
+    align-items:flex-start;
+    margin-bottom:12px;
 }
-.right-panels .panel .table-section .route-list-header{
+
+.left-panels .panel .table-section .route-list-header,
+.right-panels .panel .table-section .route-list-header {
     background:rgba(0, 120, 212, 0.8);
     border-radius:6px 6px 0px 0px;
     display:grid;
@@ -296,7 +382,7 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     border-bottom: 1px solid rgba(255,255,255,0.02);
     font-size: 16px;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
     justify-content: space-between;
     transition: background 180ms, transform 120ms;
@@ -366,6 +452,53 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
     align-items: center;
     gap: 8px;
     width: 100%;
+}
+
+/* ===== 新增：order-panel 新子面板样式（跟随大屏主题） ===== */
+
+/* 新指标行布局：两个metrics-row上下排列，每行横向flex，metric自适应宽度 */
+.metric {
+    align-items: center;
+    text-align: center;
+    padding: 12px;
+    background: url("../image/panel.png");
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    width: 46%;
+}
+.metric .summary-label {
+    color: #00eaff;
+    font-weight: 700;
+    font-size: 1.8em;
+}
+.metric .summary-num {
+    color: #DFF6FB;
+    font-weight: 900;
+    font-size: 2.4em;
+    margin-left: 10px;
+}
+
+.left-panels .panel .stations-card, .right-panels .panel .stations-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: url("../image/panel.png");
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    padding: 12px;
+}
+.stations-card .summary-label {
+    font-size: 2.4em;
+    font-weight: 700;
+    color: #DFF6FB;
+    letter-spacing: 1px;
+    margin-left: 0.8em;
+}
+.stations-card .summary-num {
+    margin-right: 36px;
+    font-size: 3.2em;
+    font-weight: bold;
+    color: #00eaff;
 }
 
 .left-panels ul.list li.selected,

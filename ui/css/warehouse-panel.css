@@ -1,0 +1,37 @@
+/* warehouse-panel.css - 仓库门店信息面板样式，适配大屏主题 */
+:root{
+  --warehouse-bg: #0f1724;
+  --warehouse-card: linear-gradient(180deg,#0b1220,#0b1226);
+  --warehouse-accent: #4fc3f7;
+  --warehouse-muted: #9aa7b2;
+  --warehouse-glass: rgba(255,255,255,0.03);
+}
+.warehouse-panel{width:100%;height:100%;padding:10px;border-radius:8px;background:var(--warehouse-card);box-shadow:0 6px 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;}
+.warehouse-panel-top{display:flex;gap:12px;margin-bottom:10px}
+.warehouse-stat{flex:1;padding:8px 0;border-radius:6px;background:var(--warehouse-glass);border:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column;align-items:center}
+.laser-blue-border {
+  border: 2.5px solid #00eaff !important;
+  box-shadow: 0 0 16px 2px #00eaff99, 0 0 2px #4fc3f7;
+  background: linear-gradient(180deg,rgba(0,234,255,0.08),rgba(79,195,247,0.04));
+  transition: box-shadow 0.3s, border-color 0.3s;
+}
+.warehouse-stat-title{font-size:2em;color:var(--warehouse-muted);margin-bottom:4px}
+.warehouse-stat-value{font-size:3.2em;font-weight:700;color:var(--warehouse-accent)}
+.warehouse-panel-body{flex:1;display:flex;gap:10px;min-height:0;}
+.warehouse-map-card{flex:2;border-radius:6px;padding:6px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;min-width:0;}
+.warehouse-map-card-title{font-size:14px;color:var(--warehouse-muted);margin-bottom:6px}
+.warehouse-mini-map{flex:1;min-height:120px;border-radius:6px;border:1px solid rgba(255,255,255,0.03);overflow:hidden;min-width:0;}
+.warehouse-list-card{flex:1;min-width:0;border-radius:6px;padding:6px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;}
+.warehouse-list-card-title{font-size:14px;color:var(--warehouse-muted);margin-bottom:6px}
+.warehouse-store-list{list-style:none;padding:0;margin:0;overflow:auto;flex:1;min-width:0;}
+.warehouse-store-list li{padding:6px 4px;border-radius:6px;margin-bottom:6px;background:rgba(255,255,255,0.01);display:flex;justify-content:space-between;align-items:center}
+.warehouse-store-name{font-weight:600}
+.warehouse-store-meta{font-size:12px;color:var(--warehouse-muted)}
+
+@media (max-width:760px){
+  .warehouse-panel{padding:4px}
+  .warehouse-panel-body{flex-direction:column}
+}
+.warehouse-store-list::-webkit-scrollbar{width:8px}
+.warehouse-store-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.04);border-radius:6px}
+.warehouse-store-list::-webkit-scrollbar-track{background:transparent}
