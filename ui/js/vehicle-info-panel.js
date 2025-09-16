@@ -3,7 +3,7 @@
     const html = `
     <div class="vehicle-info-panel">
         <div class="panel-header" id="vehicle-total">
-            车辆总数 <span class="stat-value" id="total-value">128</span>
+            <a href="/car-manage.html">车辆总数</a> <span class="stat-value" id="total-value">128</span>
         </div>
         <div class="panel-stats-4">
             <div class="stat-block">
@@ -25,7 +25,7 @@
         </div>
         <div class="panel-info">
             <div class="info-col">
-                <div class="info-row">当前车ID：<span id="vehicle-id">000001</span></div>
+                <div class="info-row">车辆ID：<span id="vehicle-id">000001</span></div>
                 <div class="info-row">车辆类型：<span id="vehicle-type">普通</span></div>
                 <div class="info-row">容量：<span id="vehicle-capacity">6立方</span></div>
             </div>

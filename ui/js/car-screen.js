@@ -17,10 +17,13 @@
         return {};
     }
 
-    function getPlannedRoute(){
-        if (typeof plannedRoute !== 'undefined') return plannedRoute;
-        if (typeof window !== 'undefined' && window.plannedRoute) return window.plannedRoute;
-        return null;
+    function getPlannedRoutes(){
+        // prefer an array named plannedRoutes, fall back to single plannedRoute wrapped as array
+        if (typeof plannedRoutes !== 'undefined' && Array.isArray(plannedRoutes)) return plannedRoutes;
+        if (typeof window !== 'undefined' && Array.isArray(window.plannedRoutes)) return window.plannedRoutes;
+        if (typeof plannedRoute !== 'undefined' && plannedRoute) return [plannedRoute];
+        if (typeof window !== 'undefined' && window.plannedRoute) return [window.plannedRoute];
+        return [];
     }
 
     function getJdPoints(){
@@ -29,11 +32,11 @@
         return null;
     }
 
-    // 计算每辆车对应的包裹件数（扫描全局 packages 列表）
+    // 计算每辆车对应的包裹件数（扫描全局 orders 列表）
     function computePackageCountsByVehicle(){
         const map = {};
         try {
-            const list = (typeof packages !== 'undefined') ? packages : (window && window.packages) || [];
+            const list = (typeof orders !== 'undefined') ? orders : (window && window.orders) || [];
             list.forEach(p => {
                 const vid = p.assignedVehicle;
                 if (!vid) return;
@@ -165,8 +168,8 @@
     function initMap(){
         if (!window.AMap) return;
         amap = new AMap.Map('amapCar', {
-            zoom: 12,
-            center: [106.336035, 29.512830],
+            zoom: 13,
+            center: [106.336035, 29.562830],
             mapStyle: "amap://styles/macaron",
             resizeEnable: true
         });
@@ -195,13 +198,25 @@
                 });
                 marker.setMap(amap);
                 marker.on('click', () => {
-                    const counts = computePackageCountsByVehicle();
-                    const cnt = counts[info.id] || 0;
-                    const win = new AMap.InfoWindow({
-                        content: `<div style="font-size:13px;line-height:1.6"><b>${info.id}</b><br>位置：${info.location}<br>速度：${info.speed}，限速：${info.limit}<br>件数：${cnt} 件</div>`,
-                        offset: new AMap.Pixel(0, -20)
-                    });
-                    win.open(amap, [info.lng, info.lat]);
+                    // 切换为更新右侧信息面板（避免在地图上再弹窗）
+                    try {
+                        if (typeof window.updateVehiclePanel === 'function') {
+                            window.updateVehiclePanel({
+                                vehicleId: info.id,
+                                vehicleType: info.type || info.vehicleType || '',
+                                vehicleCapacity: info.capacity || info.loadCapacity || '',
+                                vehicleBattery: info.battery || info.batteryLevel || '',
+                                vehicleSpeed: info.speed || '',
+                                vehicleRoute: info.routeId || info.route || ''
+                            });
+                        }
+                        // 同时将地图居中到该车辆
+                        try { amap.setZoom(16); } catch(e){}
+                        try {
+                            const p = marker.getPosition();
+                            if (p && typeof p.getLng === 'function') amap.setCenter([p.getLng(), p.getLat()]);
+                        } catch(e){ if (info && info.lng && info.lat) try{ amap.setCenter([info.lng, info.lat]); }catch(e){} }
+                    } catch(e){ console.warn('marker click updateVehiclePanel failed', e); }
                 });
                 vehicleMarkers[info.id] = marker;
             } catch(e){
@@ -255,11 +270,10 @@
         } catch(e){ console.warn('draw warehouses/stores failed', e); }
 
         // 如果 data.js 中提供了 plannedRoute，则使用高德路径规划优先构造真实道路坐标并绘制三类线路：正常(绿)、拥挤(红)、测试(蓝)
-        const _planned = getPlannedRoute();
-        if (_planned && Array.isArray(_planned.waypoints) && _planned.waypoints.length >= 2){
-            const origWaypoints = (_planned.waypoints||[]).map(p=>[+p.lng, +p.lat]);
+        const _plannedList = getPlannedRoutes();
+        if (_plannedList && Array.isArray(_plannedList) && _plannedList.length){
 
-            // fetch driving polyline for a segment via 高德 REST API
+            // fetch driving polyline for a segment via 高德 REST API (single helper reused for all routes)
             function fetchDrivingRoute(origin, destination){
                 return new Promise(function(resolve, reject){
                     try {
@@ -293,97 +307,103 @@
                 });
             }
 
-            // drawing implementation re-usable for arbitrary coords
-            function drawFromCoords(coords){
-                // helper: apply offset, rotate and optional mirror to an array of [lng,lat]
-                function transformRoutePoints(points, opts){
-                    opts = opts || {};
-                    var offset = typeof opts.offset === 'number' ? opts.offset : 0.004;
-                    var stepNormal = !!opts.stepNormal;
-                    var rotateDeg = typeof opts.rotateDeg === 'number' ? opts.rotateDeg : 0;
-                    var mirror = !!opts.mirror;
-                    var out = [];
-                    var cosr = Math.cos(rotateDeg * Math.PI / 180);
-                    var sinr = Math.sin(rotateDeg * Math.PI / 180);
-                    for (var i=0;i<points.length;i++){
-                        var p = points[i];
-                        var lng = +p[0], lat = +p[1];
-                        var dx = 0, dy = 0;
-                        if (stepNormal && i < points.length - 1){
-                            var a = points[i], b = points[i+1];
-                            var vx = b[0] - a[0], vy = b[1] - a[1];
-                            var nx = -vy, ny = vx;
-                            var nlen = Math.sqrt(nx*nx + ny*ny) || 1;
-                            nx /= nlen; ny /= nlen;
-                            dx = nx * offset; dy = ny * offset;
-                        } else { dx = offset; dy = offset/2; }
-                        if (mirror) dx = -dx;
-                        var rx = dx * cosr - dy * sinr;
-                        var ry = dx * sinr + dy * cosr;
-                        out.push([lng + rx, lat + ry]);
-                    }
-                    return out;
-                }
+            // For each planned route, build and draw asynchronously
+            _plannedList.forEach(function(route, rindex){
+                if (!route || !Array.isArray(route.waypoints) || route.waypoints.length < 2) return;
+                (async function(_route, idx){
+                    var origWaypoints = (_route.waypoints||[]).map(p=>[+p.lng, +p.lat]);
 
-                // info window for markers
-                var siteInfoWindow = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -20) });
-
-                try {
-                    const normalLine = new AMap.Polyline({ path: coords, strokeColor: '#04fd04', strokeWeight: 4, lineJoin: 'round', zIndex:120 });
-                    normalLine.setMap(amap);
-                    routePolylines['normal'] = normalLine;
-                } catch(e){ console.warn('draw normal route failed', e); }
-
-                // NOTE: congested route drawing intentionally disabled to avoid over-plotting
-
-                // NOTE: test route drawing intentionally disabled to avoid over-plotting
-
-                // also add original waypoint markers from planned (as before)
-                try {
-                    (_planned.waypoints || []).forEach((p, idx) => {
-                        const isWarehouse = (idx % 2) === 0;
-                        const name = isWarehouse ? ('途径点-仓库-' + (idx+1)) : ('途径点-门店-' + (idx+1));
-                        const addr = `经度: ${p.lng}，纬度: ${p.lat}`;
-                        const content = isWarehouse
-                            ? '<div style="width:12px;height:12px;border-radius:50%;background:#2b6cff;border:2px solid #fff"></div>'
-                            : '<div style="width:12px;height:12px;border-radius:50%;background:#ffd24d;border:2px solid #fff"></div>';
-                        const m = new AMap.Marker({ position: [p.lng, p.lat], content: content, offset: new AMap.Pixel(-6, -6), zIndex:150 });
-                        m.setMap(amap);
-                        m.on('mouseover', () => { siteInfoWindow.setContent(`<div style="font-size:13px;color:#000"><b>${name}</b><br/>${addr}</div>`); siteInfoWindow.open(amap, [p.lng, p.lat]); });
-                        m.on('mouseout', () => siteInfoWindow.close());
-                        siteMarkers[(isWarehouse ? 'warehouses' : 'stores')].push(m);
-                    });
-                } catch(e){ console.warn('render waypoints failed', e); }
-            }
-
-            // assemble route by fetching driving segments between consecutive original waypoints
-            (async function(){
-                var coords = origWaypoints.slice();
-                try {
-                    var all = [];
-                    for (var i=0;i<origWaypoints.length-1;i++){
-                        var a = origWaypoints[i], b = origWaypoints[i+1];
+                    // drawing implementation re-usable for this route's coords
+                    function drawFromCoordsForRoute(coords){
+                        // info window for markers
+                        var siteInfoWindow = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -20) });
                         try {
-                            var seg = await fetchDrivingRoute(a,b);
-                            if (seg && seg.length){
-                                if (all.length && all[all.length-1][0]===seg[0][0] && all[all.length-1][1]===seg[0][1]) seg.shift();
-                                all = all.concat(seg);
-                            } else {
+                            var routeId = _route.id || ('route-' + idx);
+                            // determine route type: default normal; route-002 -> congested; route-003 -> test
+                            var routeType = 'normal';
+                            if ((routeId && routeId.toString() === 'route-002') || (_route && _route.id && _route.id === 'route-002')) routeType = 'congested';
+                            else if ((routeId && routeId.toString() === 'route-003') || (_route && _route.id && _route.id === 'route-003')) routeType = 'test';
+
+                            var key = routeType + '-' + routeId;
+                            var color = '#04fd04';
+                            var strokeWeight = 4;
+                            var strokeStyleOpt = null;
+                            var zIndex = 120;
+                            if (routeType === 'congested'){
+                                color = '#ff4d4f'; // red
+                                strokeWeight = 6;
+                                zIndex = 130;
+                            } else if (routeType === 'test'){
+                                color = '#0084ff'; // blue
+                                strokeWeight = 4;
+                                zIndex = 115;
+                            }
+                            // main colors
+                            var opts = { path: coords, strokeColor: color, strokeWeight: strokeWeight, lineJoin: 'round', zIndex: zIndex };
+                            if (strokeStyleOpt) opts.strokeStyle = strokeStyleOpt;
+
+                            // Draw a subtle halo (background) line first to improve contrast when overlapping
+                            try {
+                                var haloKey = 'halo-' + key;
+                                var haloOpts = { path: coords, strokeColor: false, strokeWeight: false, lineJoin: 'round', zIndex: zIndex - 2, strokeOpacity: 0.95 };
+                                var haloLine = new AMap.Polyline(haloOpts);
+                                haloLine.setMap(amap);
+                                routePolylines[haloKey] = haloLine;
+                            } catch(e){ /* ignore halo errors */ }
+
+                            // main line - ensure full opacity and solid color to avoid blend mixing
+                            opts.strokeOpacity = 1;
+                            if (strokeStyleOpt) opts.strokeStyle = strokeStyleOpt;
+                            const routeLine = new AMap.Polyline(opts);
+                            routeLine.setMap(amap);
+                            routePolylines[key] = routeLine;
+                        } catch(e){ console.warn('draw route failed', e); }
+
+                        // also add original waypoint markers from planned (as before)
+                        try {
+                            (_route.waypoints || []).forEach((p, idx2) => {
+                                const isWarehouse = (idx2 % 2) === 0;
+                                const name = isWarehouse ? ('途径点-仓库-' + (idx2+1)) : ('途径点-门店-' + (idx2+1));
+                                const addr = `经度: ${p.lng}，纬度: ${p.lat}`;
+                                const content = isWarehouse
+                                    ? '<div style="width:12px;height:12px;border-radius:50%;background:#2b6cff;border:2px solid #fff"></div>'
+                                    : '<div style="width:12px;height:12px;border-radius:50%;background:#ffd24d;border:2px solid #fff"></div>';
+                                const m = new AMap.Marker({ position: [p.lng, p.lat], content: content, offset: new AMap.Pixel(-6, -6), zIndex:150 });
+                                m.setMap(amap);
+                                m.on('mouseover', () => { siteInfoWindow.setContent(`<div style="font-size:13px;color:#000"><b>${name}</b><br/>${addr}</div>`); siteInfoWindow.open(amap, [p.lng, p.lat]); });
+                                m.on('mouseout', () => siteInfoWindow.close());
+                                siteMarkers[(isWarehouse ? 'warehouses' : 'stores')].push(m);
+                            });
+                        } catch(e){ console.warn('render waypoints failed', e); }
+                    }
+
+                    // assemble route by fetching driving segments between consecutive original waypoints
+                    try {
+                        var coords = origWaypoints.slice();
+                        var all = [];
+                        for (var i=0;i<origWaypoints.length-1;i++){
+                            var a = origWaypoints[i], b = origWaypoints[i+1];
+                            try {
+                                var seg = await fetchDrivingRoute(a,b);
+                                if (seg && seg.length){
+                                    if (all.length && all[all.length-1][0]===seg[0][0] && all[all.length-1][1]===seg[0][1]) seg.shift();
+                                    all = all.concat(seg);
+                                } else {
+                                    if (all.length===0) all.push(a);
+                                    all.push(b);
+                                }
+                            } catch(e){
+                                console.warn('segment fetch failed, fallback to straight', e);
                                 if (all.length===0) all.push(a);
                                 all.push(b);
                             }
-                        } catch(e){
-                            console.warn('segment fetch failed, fallback to straight', e);
-                            if (all.length===0) all.push(a);
-                            all.push(b);
                         }
-                    }
-                    if (all && all.length >= 2) coords = all;
-                } catch(e){ console.warn('failed to build full route via API', e); }
-
-                // draw using the assembled coords (real route or fallback)
-                drawFromCoords(coords);
-            })();
+                        if (all && all.length >= 2) coords = all;
+                        // draw using the assembled coords (real route or fallback)
+                        drawFromCoordsForRoute(coords);
+                    } catch(e){ console.warn('failed to build full route via API', e); }
+                })(route, rindex);
+            });
         }
     }
 
@@ -419,12 +439,15 @@
                     // keep for API compatibility: no-op
                     break;
                 case 'operation':
-                    // operation routes = normal + congested
-                    if (routePolylines['normal'] && routePolylines['normal'].setMap) routePolylines['normal'].setMap(visible ? amap : null);
-                    if (routePolylines['congested'] && routePolylines['congested'].setMap) routePolylines['congested'].setMap(visible ? amap : null);
+                    // operation routes = all 'normal-' and 'congested-' prefixed polylines (including halos)
+                    Object.keys(routePolylines).forEach(k=>{
+                        if (k.indexOf('normal-')===0 || k.indexOf('congested-')===0 || k.indexOf('halo-normal-')===0 || k.indexOf('halo-congested-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
+                    });
                     break;
                 case 'test':
-                    if (routePolylines['test'] && routePolylines['test'].setMap) routePolylines['test'].setMap(visible ? amap : null);
+                    Object.keys(routePolylines).forEach(k=>{
+                        if (k.indexOf('test-')===0 || k.indexOf('halo-test-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
+                    });
                     break;
                 default:
                     // unknown type
@@ -504,6 +527,35 @@
         renderCharts();
         // try to initialize AMap; use retry wrapper in case script loads slowly
         ensureInitMap(12, 300);
+        // 如果 URL 中带有 vehicle 参数，尝试在地图与标记就绪后聚焦该车辆
+        (function(){
+            function getQueryParam(name){
+                try{
+                    const params = new URLSearchParams(window.location.search);
+                    return params.get(name);
+                }catch(e){
+                    // fallback simple parse
+                    const m = window.location.search.match(new RegExp('[?&]'+name+'=([^&]+)'));
+                    return m && decodeURIComponent(m[1]);
+                }
+            }
+
+            const vid = getQueryParam('vehicle');
+            if (!vid) return;
+
+            // wait for amap and vehicleMarkers to be ready
+            let attempts = 0;
+            const maxAttempts = 40; // ~40*300ms = 12s
+            const tid = setInterval(function(){
+                attempts++;
+                if (typeof amap !== 'undefined' && amap && Object.keys(vehicleMarkers).length > 0) {
+                    clearInterval(tid);
+                    try { focusVehicleById(vid); } catch(e){ console.warn('focusVehicleById failed', e); }
+                    return;
+                }
+                if (attempts >= maxAttempts) { clearInterval(tid); console.warn('focusVehicleById: vehicle markers not ready'); }
+            }, 300);
+        })();
         // initialize trip chart and show default or mock data
         initTripChart();
         updateTripChartForRoute(null, null);
@@ -516,297 +568,140 @@
         if (amap && amap.on) {
             amap.on('click', () => { clearHighlight(); });
         }
+
+        // 聚焦车辆并在右侧面板展示信息
+        function focusVehicleById(id){
+            if (!id) return;
+            const marker = vehicleMarkers[id] || null;
+            // try to find vehicle info from data source
+            const vehicles = getVehiclesMap() || {};
+            let info = null;
+            if (Array.isArray(vehicles)) info = vehicles.find(v=> (v.id||v.vehicleId||v.carId) == id) || null;
+            else if (vehicles && typeof vehicles === 'object') info = vehicles[id] || Object.values(vehicles).find(v=> (v.id||'')==id) || null;
+
+            if (marker && amap) {
+                try {
+                    // set view
+                    try { amap.setZoom(16); } catch(e){}
+                    // marker.getPosition may return LngLat object
+                    let pos = null;
+                    try { pos = marker.getPosition(); } catch(e){}
+                    if (pos && typeof pos.getLng === 'function') {
+                        amap.setCenter([pos.getLng(), pos.getLat()]);
+                    } else if (Array.isArray(pos) && pos.length>=2) {
+                        amap.setCenter([pos[0], pos[1]]);
+                    } else if (info && info.lng && info.lat) {
+                        amap.setCenter([info.lng, info.lat]);
+                    }
+
+                    // 更新右侧信息面板（替代弹窗）
+                    if (typeof window.updateVehiclePanel === 'function') {
+                        try {
+                            window.updateVehiclePanel({
+                                vehicleId: id,
+                                vehicleType: (info && (info.type||info.vehicleType)) || '',
+                                vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
+                                vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
+                                vehicleSpeed: (info && info.speed) || '',
+                                vehicleRoute: (info && (info.routeId||info.route)) || ''
+                            });
+                        } catch(e){ console.warn('updateVehiclePanel in focus failed', e); }
+                    }
+                } catch(e){ console.warn('focusVehicleById error', e); }
+                return;
+            }
+
+            // fallback: if marker not found, try to center using info coords
+            if (info && info.lng && info.lat && amap) {
+                try { amap.setZoom(16); amap.setCenter([info.lng, info.lat]); } catch(e){ console.warn(e); }
+                if (typeof window.updateVehiclePanel === 'function') {
+                    window.updateVehiclePanel({
+                        vehicleId: id,
+                        vehicleType: (info && (info.type||info.vehicleType)) || '',
+                        vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
+                        vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
+                        vehicleSpeed: (info && info.speed) || '',
+                        vehicleRoute: (info && (info.routeId||info.route)) || ''
+                    });
+                }
+            }
+        }
     });
 
-    // ECharts 地图模块已移除；下面保留仓库/门店模拟数据和车辆相关工具函数（用于非 ECharts 地图或未来迁移）
-    // 仓库和门店的经纬度（重庆主城区附近）
-    const WAREHOUSES = [
-        { name: '大学城仓库', lng: 106.319, lat: 29.611, type: 'warehouse', address: '重庆市大学城' },
-        { name: '白市驿仓库', lng: 106.372, lat: 29.495, type: 'warehouse', address: '重庆市白市驿' }
-    ];
-    const STORES = [
-        { name: '大学城门店', lng: 106.311, lat: 29.579, type: 'store', address: '重庆市大学城' },
-        { name: '金凤镇门店', lng: 106.312, lat: 29.522, type: 'store', address: '重庆市金凤镇' },
-        { name: '科学谷门店', lng: 106.393, lat: 29.537, type: 'store', address: '重庆市科学谷' }
-    ];
-
-    // 构建仓库series
-    function buildWarehouseSeries() {
-        var tp = getMapTransformParams();
-        var cMerc = tp.centerMerc, yaw = tp.yawRad, pitch = tp.pitchRad, vd = tp.viewerDist;
-        var data = WAREHOUSES.map(function(w) {
-            var t = transformCoordsRecursive([[w.lng, w.lat]], cMerc, yaw, pitch, vd);
-            var out = t && t[0] ? t[0] : [w.lng, w.lat];
-            return {
-                name: w.name,
-                value: [out[0], out[1]],
-                address: w.address,
-                symbol: 'circle',
-                symbolSize: 20,
-                itemStyle: { color: '#f59e42', borderColor: '#fff', borderWidth: 2, shadowBlur: 8, shadowColor: '#f59e42' },
-                label: { show: false, color: '#fff', fontWeight: 700, fontSize: 13, formatter: w.name }
-            };
-        });
-        return [{
-            name: 'warehouses',
-            id: 'warehouses',
-            type: 'scatter',
-            coordinateSystem: 'geo',
-            zlevel: 8,
-            z: 1100,
-            symbol: 'circle',
-            symbolSize: 20,
-            label: { show: false, color: '#fff', fontWeight: 700, fontSize: 13, formatter: '{b}' },
-            itemStyle: { color: '#f59e42', borderColor: '#fff', borderWidth: 2, shadowBlur: 8, shadowColor: '#f59e42' },
-            tooltip: {
-                show: true,
-                formatter: function(p) {
-                    return '<div style="font-size:13px;color:#fff"><b>' + p.name + '</b><br/>类型: 仓库<br/>地址: ' + (p.data.address||'') + '</div>';
-                }
-            },
-            data: data
-        }];
-    }
-
-    // 构建门店series
-    function buildStoreSeries() {
-        var tp = getMapTransformParams();
-        var cMerc = tp.centerMerc, yaw = tp.yawRad, pitch = tp.pitchRad, vd = tp.viewerDist;
-        var data = STORES.map(function(s) {
-            var t = transformCoordsRecursive([[s.lng, s.lat]], cMerc, yaw, pitch, vd);
-            var out = t && t[0] ? t[0] : [s.lng, s.lat];
-            return {
-                name: s.name,
-                value: [out[0], out[1]],
-                address: s.address,
-                symbol: 'circle',
-                symbolSize: 20,
-                itemStyle: { color: '#60a5fa', borderColor: '#fff', borderWidth: 2, shadowBlur: 8, shadowColor: '#60a5fa' },
-                label: { show: false, color: '#fff', fontWeight: 700, fontSize: 12, formatter: s.name }
-            };
-        });
-        return [{
-            name: 'stores',
-            id: 'stores',
-            type: 'scatter',
-            coordinateSystem: 'geo',
-            zlevel: 8,
-            z: 1100,
-            symbol: 'circle',
-            symbolSize: 20,
-            label: { show: false, color: '#fff', fontWeight: 700, fontSize: 12, formatter: '{b}' },
-            itemStyle: { color: '#60a5fa', borderColor: '#fff', borderWidth: 2, shadowBlur: 8, shadowColor: '#60a5fa' },
-            tooltip: {
-                show: true,
-                formatter: function(p) {
-                    return '<div style="font-size:13px;color:#fff"><b>' + p.name + '</b><br/>类型: 门店<br/>地址: ' + (p.data.address||'') + '</div>';
-                }
-            },
-            data: data
-        }];
-    }
-    // ================== END 仓库/门店模拟数据 ==================
-
-    // 构建路线 series（优先使用 getPlannedRoute）
-    function buildRouteSeries(){
-        var planned = getPlannedRoute();
-        if (!planned || !Array.isArray(planned.waypoints) || planned.waypoints.length < 2) return [];
-        var coords = (planned.waypoints||[]).map(function(p){ return [ +p.lng, +p.lat ]; });
-        // helper: apply offset, rotate and optional mirror to an array of [lng,lat]
-        function transformRoutePoints_local(points, opts){
-            opts = opts || {};
-            var offset = typeof opts.offset === 'number' ? opts.offset : 0.004;
-            var stepNormal = !!opts.stepNormal;
-            var rotateDeg = typeof opts.rotateDeg === 'number' ? opts.rotateDeg : 0;
-            var mirror = !!opts.mirror;
-            var out = [];
-            var cosr = Math.cos(rotateDeg * Math.PI / 180);
-            var sinr = Math.sin(rotateDeg * Math.PI / 180);
-            for (var i=0;i<points.length;i++){
-                var p = points[i];
-                var lng = +p[0], lat = +p[1];
-                var dx = 0, dy = 0;
-                if (stepNormal && i < points.length - 1){
-                    var a = points[i], b = points[i+1];
-                    var vx = b[0] - a[0], vy = b[1] - a[1];
-                    var nx = -vy, ny = vx;
-                    var nlen = Math.sqrt(nx*nx + ny*ny) || 1;
-                    nx /= nlen; ny /= nlen;
-                    dx = nx * offset; dy = ny * offset;
-                } else {
-                    dx = offset; dy = offset/2;
-                }
-                if (mirror) dx = -dx;
-                var rx = dx * cosr - dy * sinr;
-                var ry = dx * sinr + dy * cosr;
-                out.push([lng + rx, lat + ry]);
-            }
-            return out;
+    // 新增：支持 route 和 warehouse 参数的自动聚焦
+    (function(){
+        function getQueryParam(name){
+            try {
+                const params = new URLSearchParams(window.location.search);
+                return params.get(name);
+            } catch(e) { return null; }
         }
 
-        // 构造两条新路线（拥挤、测试），使用更明显的偏移/旋转/镜像
-        var congestedCoords = transformRoutePoints_local(coords, { offset: 0.0075, stepNormal: true, rotateDeg: 6, mirror: false });
-        var testCoords = transformRoutePoints_local(coords.slice().reverse(), { offset: 0.0095, stepNormal: true, rotateDeg: -12, mirror: true });
+        const routeId = getQueryParam('route');
+        const warehouseId = getQueryParam('warehouse');
 
-        // apply same yaw/pitch transform used for streets so lines 对齐轴测地图
-        try {
-            var tp = getMapTransformParams();
-            var centerMerc = tp.centerMerc;
-            var yaw = tp.yawRad; var pitch = tp.pitchRad; var vd = tp.viewerDist;
-            coords = coords.map(function(ll){
-                try {
-                    var transformed = transformCoordsRecursive([ll], centerMerc, yaw, pitch, vd);
-                    return transformed && transformed[0] ? [ +transformed[0][0], +transformed[0][1] ] : ll;
-                } catch(e){ return ll; }
-            });
-            congestedCoords = congestedCoords.map(function(ll){
-                try {
-                    var transformed = transformCoordsRecursive([ll], centerMerc, yaw, pitch, vd);
-                    return transformed && transformed[0] ? [ +transformed[0][0], +transformed[0][1] ] : ll;
-                } catch(e){ return ll; }
-            });
-            testCoords = testCoords.map(function(ll){
-                try {
-                    var transformed = transformCoordsRecursive([ll], centerMerc, yaw, pitch, vd);
-                    return transformed && transformed[0] ? [ +transformed[0][0], +transformed[0][1] ] : ll;
-                } catch(e){ return ll; }
-            });
-        } catch(e){ /* ignore and use raw coords */ }
+        if (!routeId && !warehouseId) return;
 
-        return [
-            {
-                name: '正常路线',
-                id: 'routes',
-                type: 'lines',
-                coordinateSystem: 'geo',
-                polyline: true,
-                silent: false,
-                effect: { show: true, period: 6, trailLength: 0.2, symbol: 'arrow', symbolSize: 6, color: '#00F8FF' },
-                lineStyle: { color: '#27e227', width: 3, opacity: 0.9, curveness: 0.1 },
-                data: [ { coords: coords, routeId: planned.id || 'R001' } ]
-            },
-            {
-                name: '拥挤路线',
-                id: 'congested_route',
-                type: 'lines',
-                coordinateSystem: 'geo',
-                polyline: true,
-                silent: false,
-                effect: { show: false },
-                lineStyle: { color: '#ff3b3b', width: 3, opacity: 0.9, curveness: 0.1 },
-                data: [ { coords: congestedCoords, routeId: 'congested' } ]
-            },
-            {
-                name: '测试路线',
-                id: 'test_route',
-                type: 'lines',
-                coordinateSystem: 'geo',
-                polyline: true,
-                silent: false,
-                effect: { show: false },
-                lineStyle: { color: '#3b7bff', width: 3, opacity: 0.9, curveness: 0.1 },
-                data: [ { coords: testCoords, routeId: 'test' } ]
+        // wait for map and layers ready (similar polling used for vehicle)
+        let attempts = 0;
+        const maxAttempts = 40;
+        const tid = setInterval(function(){
+            attempts++;
+            if (typeof amap !== 'undefined' && amap) {
+                clearInterval(tid);
+                try {
+                    if (routeId) {
+                        // try to find polyline and focus it
+                        // try to find a polyline keyed by type-routeId like 'normal-<id>' or 'congested-<id>'
+                        let poly = null;
+                        try {
+                            const keys = Object.keys(routePolylines || {});
+                            for (let k of keys) {
+                                if (!k) continue;
+                                if (k === routeId || k.endsWith('-' + routeId) || k.indexOf(routeId) !== -1) { poly = routePolylines[k]; break; }
+                            }
+                        } catch(e){ poly = routePolylines[routeId]; }
+                        if (poly && (typeof poly.getPath === 'function' || typeof poly.getBounds === 'function')) {
+                            try {
+                                if (typeof amap.setFitView === 'function') amap.setFitView(poly);
+                                else if (typeof poly.getBounds === 'function') amap.setBounds(poly.getBounds());
+                            } catch(e){ /* ignore fit errors */ }
+                            // highlight
+                            try { poly.setOptions({ strokeWeight: 8 }); } catch(e){}
+                            highlightedRouteId = routeId;
+                            updateTripChartForRoute(routeId, null);
+                        } else {
+                            // fallback: if route start/end coords exist
+                            const re = routeStartEnd[routeId];
+                            if (re && re.start) {
+                                amap.setCenter([re.start.lng, re.start.lat]);
+                                amap.setZoom(14);
+                            }
+                        }
+                    }
+                    if (warehouseId) {
+                        // find warehouse coords from WAREHOUSES or STORES
+                        const find = (WAREHOUSES.concat(STORES)).find(s => (
+                            s.name === warehouseId || String(s.name) === String(warehouseId) ||
+                            s.warehouseId === warehouseId || String(s.warehouseId) === String(warehouseId) ||
+                            s.id === warehouseId || String(s.id) === String(warehouseId)
+                        ));
+                        const found = find || (WAREHOUSES.concat(STORES)).find(s => (String(s.lng) && String(s.lat) && (s.name && s.name.includes(warehouseId))));
+                        if (found && found.lng && found.lat) {
+                            amap.setCenter([found.lng, found.lat]);
+                            amap.setZoom(15);
+                        }
+                    }
+                } catch(e){ console.warn('focus route/warehouse failed', e); }
+                return;
             }
-        ];
-    }
-
-    // 构建车辆点位 series（从全局 vehiclesData 中读取）
-    function buildVehicleSeries(vehicleMap){
-        var list = [];
-        try {
-            var vals = Object.values(vehicleMap || {});
-            var tp = getMapTransformParams();
-            var cMerc = tp.centerMerc; var yaw = tp.yawRad; var pitch = tp.pitchRad; var vd = tp.viewerDist;
-            vals.forEach(function(v){
-                if (!v) return;
-                if (!isFinite(+v.lng) || !isFinite(+v.lat)) return;
-                try {
-                    var transformed = transformCoordsRecursive([[+v.lng, +v.lat]], cMerc, yaw, pitch, vd);
-                    var out = transformed && transformed[0] ? transformed[0] : [+v.lng, +v.lat];
-                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +out[0], +out[1], +(v.speed||0) ], raw: v,
-                        symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
-                } catch(e){
-                    list.push({ name: v.id || (v.vehicleId||'veh'), value: [ +v.lng, +v.lat, +(v.speed||0) ], raw: v,
-                        symbol: 'image://' + VEHICLE_ICON, symbolSize: 32, symbolRotate: +(v.heading||0) });
-                }
-            });
-        } catch(e){}
-        return [{
-            name: 'vehicles',
-            id: 'vehicles',
-            type: 'scatter',
-            coordinateSystem: 'geo',
-            // put vehicles on a higher zlevel so they always render above streets
-            zlevel: 10,
-            z: 1200,
-            symbol: 'image://' + VEHICLE_ICON,
-            symbolSize: 32,
-            label: { show: false, formatter: '{b}', color: '#ffffff', position: 'right' },
-            itemStyle: { borderColor: '#fff', borderWidth: 1, shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.35)' },
-            tooltip: { 
-                show: true,
-                formatter: function (p) {
-                    var v = p && p.data && p.data.raw ? p.data.raw : null;
-                    var speed = (p && p.value && p.value[2]) ? p.value[2] : (v && v.speed ? v.speed : '-');
-                    var pkgCnt = (v && v.id) ? (computePackageCountsByVehicle()[v.id] || 0) : 0;
-                    return '<div style="font-size:12px;color:#fff">' + (p.name||'车辆') + '<br/>速度: ' + speed + ' km/h<br/>件数: ' + pkgCnt + '</div>';
-                }
-            },
-            data: list
-        }];
-    }
-
-    // 尝试从页面可用的 GeoJSON 中恢复用于几何旋转的参数（center, yaw, pitch）
-    function getMapTransformParams(){
-        try {
-            var g = window.__SPB_MAP_TRANSFORM__;
-            if (g && g.centerMerc && (typeof g.yawDeg !== 'undefined')){
-                var yawRad = (g.yawDeg||0) * Math.PI / 180.0;
-                var pitchRad = (g.pitchDeg||0) * Math.PI / 180.0;
-                return { centerMerc: g.centerMerc, yawRad: yawRad, pitchRad: pitchRad, viewerDist: undefined };
+            if (attempts >= maxAttempts) {
+                clearInterval(tid);
+                console.warn('amap not ready for route/warehouse focus');
             }
-        } catch(e){}
-        var candidate = window.streetsGeoJSON || window.streets || window.__SPB_STREETS__ || null;
-        var center = null;
-        if (candidate && candidate.features) center = computeGeoJSONBBoxCenter(candidate);
-        if (!center) center = [106.372064, 29.534044];
-        var yawDeg = -45; // fallback
-        var pitchDeg = 45;
-        var yawRad = (yawDeg||0) * Math.PI / 180.0;
-        var pitchRad = (pitchDeg||0) * Math.PI / 180.0;
-        var centerMerc = lonLatToMercator(center[0], center[1]);
-        return { centerMerc: centerMerc, yawRad: yawRad, pitchRad: pitchRad, viewerDist: undefined };
-    }
+        }, 300);
+    })();
 
-    // 简单沿路线模拟移动（当全局 vehiclesData 没有实时坐标时使用）
-    var _simState = {};
-    function ensureSimForVehicle(id, routeCoords){
-        if (!_simState[id]){
-            _simState[id] = { idx:0, progress:0 }; // idx 到下一点的索引，progress 0..1
-        }
-        var s = _simState[id];
-        // 保证 idx 在范围内
-        if (!routeCoords || routeCoords.length < 2) { s.idx = 0; s.progress = 0; }
-        else { s.idx = Math.max(0, Math.min(s.idx, routeCoords.length - 2)); }
-        return s;
-    }
-
-    function stepSimulateAlongRoute(routeCoords, state, stepFrac){
-        if (!routeCoords || routeCoords.length < 2) return routeCoords && routeCoords[0] || [0,0];
-        stepFrac = stepFrac || 0.02; // 每次前进的比例
-        state.progress += stepFrac;
-        while (state.progress >= 1 && state.idx < routeCoords.length - 2){ state.progress -= 1; state.idx++; }
-        if (state.progress >=1) state.progress = 1;
-        var a = routeCoords[state.idx];
-        var b = routeCoords[Math.min(state.idx+1, routeCoords.length-1)];
-        var lng = a[0] + (b[0]-a[0]) * state.progress;
-        var lat = a[1] + (b[1]-a[1]) * state.progress;
-        return [lng, lat];
-    }
-
-    // ECharts 车辆/线路层逻辑已移除（原 startEchartsVehicleLayer 已删除）。
-
-    // 已移除 ECharts 地图自动初始化：保留占位，后续可在需要时调用地图初始化 API。
 })();
 
 

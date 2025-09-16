@@ -1,0 +1,296 @@
+/* 政府项目严肃风格样式 */
+:root {
+    --primary-blue: #1a56db;
+    --dark-blue: #1e3a8a;
+    --light-blue: #eff6ff;
+    --gray-dark: #374151;
+    --gray-medium: #6b7280;
+    --gray-light: #e5e7eb;
+    --gray-bg: #f9fafb;
+    --white: #ffffff;
+    --border-color: #d1d5db;
+}
+
+/* 添加本地字体定义 */
+@font-face {
+    font-family: 'YJSZ';
+    src: url("../font/yjsz.TTF") format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+body {
+    margin: 0;
+    font-family: 'YJSZ', Arial, sans-serif;
+    font-size: 62.5%;
+    background: var(--gray-bg);
+    line-height: 1;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+    min-width: 1200px;
+}
+
+/* 左侧导航栏 - 严肃风格 */
+.sidebar {
+    width: 12%;
+    background: var(--white);
+    padding: 20px 0;
+    border-right: 1px solid var(--border-color);
+    box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+}
+
+.sidebar h2 {
+    font-size: 2.4em;
+    font-weight: 600;
+    margin: 10px 20px 20px 12px;
+    padding-bottom: 15px;
+    color: var(--dark-blue);
+    border-bottom: 2px solid var(--gray-light);
+}
+
+.nav-list {
+    width: 100%;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.nav-item {
+    font-size: 15px;
+    font-weight: 500;
+    padding: 12px 20px;
+    cursor: pointer;
+    color: var(--gray-dark);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.nav-item:hover {
+    background: var(--light-blue);
+    border-left-color: var(--primary-blue);
+}
+
+.nav-item .bi {
+    font-size: 14px;
+    color: var(--gray-medium);
+}
+
+.sub-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: none;
+    background: var(--gray-bg);
+    border-left: 3px solid var(--primary-blue);
+}
+
+.sub-list.show {
+    display: block;
+}
+
+.sub-item {
+    font-size: 14px;
+    color: var(--gray-medium);
+    padding: 10px 20px 10px 40px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 1px solid var(--gray-light);
+}
+
+.sub-item:hover {
+    background: var(--light-blue);
+    color: var(--primary-blue);
+}
+
+.sub-item:last-child {
+    border-bottom: none;
+}
+
+/* 主体内容区域 */
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
+h1 {
+    font-size: 2rem;
+    margin-bottom: 24px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+/* 检索筛选区 */
+.filter-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.filter-bar input, .filter-bar select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 1rem;
+    background: #fff;
+}
+.filter-bar button {
+    padding: 8px 20px;
+    background: #2d5be3;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.filter-bar button:hover {
+    background: #1a3fa0;
+}
+
+.panel-body { margin-top:16px; flex:1; display:flex; flex-direction:column; }
+.table-wrap { background:#fff; border:1px solid #e6e9ee; border-radius:14px; padding:14px; flex:1; overflow:auto; }
+#table { width:100%; border-collapse:collapse; min-width:900px; }
+#table thead th { text-align:center; padding:10px 12px; border-bottom:1px solid #eef2f6; color:#334155; font-weight:600; }
+#table tbody td { text-align:center; padding:12px; border-bottom:1px dashed #f1f5f9; color:#374151; font-family: 'Times New Roman', 'YJSZ', Arial, sans-serif; line-height: 1.2; }
+.table-empty { text-align:center; color:#6b7280; padding:24px; }
+
+/* 表格行交互 */
+#table tbody tr { transition: background .12s ease; cursor: pointer; }
+#table tbody tr:hover { background: linear-gradient(90deg, #fbfdff, #f6f9ff); }
+
+.btn-monitor {
+    color:cornflowerblue;
+    background: #ffffff00;
+    border: none;
+}
+
+/* 详情侧边面板 */
+.detail-panel {
+    position:fixed;
+    right:0;
+    top: 2%;
+    bottom: 2%;
+    width: 20%;
+    max-width:90%;
+    background:#fff;
+    border-left:1px solid #e6e9ee;
+    box-shadow: -12px 0 30px rgba(16,24,40,0.06);
+    border-radius:10px 0 0 10px;
+    transform:translateX(100%);
+    transition: transform .2s ease;
+    display:flex;
+    flex-direction:column;
+    z-index:80;
+}
+.detail-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #f1f5f9; }
+.detail-header h3 { margin:0; font-size:16px; color:#0f172a; }
+.detail-body { padding:14px 16px; overflow:auto; color:#334155; }
+
+/* 统一详情面板内部信息行样式：label/value 对齐，便于不同内容复用 */
+.info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.info-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 1.4rem; /* 14px */
+    color: var(--gray-dark);
+}
+.info-item .label {
+    width: 90px;
+    min-width: 70px;
+    color: var(--gray-medium);
+    font-weight: 600;
+}
+.info-item .value {
+    flex: 1;
+    color: var(--gray-dark);
+    word-break: break-word;
+}
+
+/* 强制面板中英数字体为 Times New Roman，以保证数字对齐和样式统一 */
+.detail-panel,
+.detail-panel *,
+#route-detail,
+#route-detail * {
+    font-family: 'Times New Roman', 'YJSZ', Arial, sans-serif;
+}
+
+/* 路线详情面板的特别样式（若存在 route-detail 节点） */
+#route-detail {
+    position: fixed;
+    right: 0;
+    top: 2%;
+    bottom: 2%;
+    width: 20%;
+    max-width: 90%;
+    background: #fff;
+    border-left: 1px solid #e6e9ee;
+    box-shadow: -12px 0 30px rgba(16,24,40,0.06);
+    border-radius: 10px 0 0 10px;
+    padding: 12px 16px;
+    overflow: auto;
+    z-index: 90;
+}
+
+/* 小屏下侧边栏行为 */
+@media (max-width:900px) {
+  .detail-panel { top:56px; width:100%; height:calc(100% - 56px); border-radius:0; }
+}
+
+/* floating add button */
+.floating-add { position:fixed; right:28px; bottom:26px; width:56px; height:56px; border-radius:50%; background:#fff; border:1px solid #e6e9ee; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 20px rgba(16,24,40,0.08); cursor:pointer; }
+.floating-add i { font-size:20px; color:#1d4ed8; }
+
+/* 左侧侧边栏底部返回大屏按钮 */
+.sidebar-footer {
+    position: absolute;
+    left: 0;
+    bottom: 18px;
+    width: 12%;
+    display: flex;
+    justify-content: center;
+    pointer-events: none; /* let inner anchor control clicks */
+}
+.btn-return {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #1d4ed8;
+    color: #fff;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 1.4rem;
+    box-shadow: 0 6px 18px rgba(29,78,216,0.12);
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn-return i { font-size: 1.6rem; }
+.btn-return:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(29,78,216,0.18); }
+
+/* 小屏响应 */
+@media (max-width:900px) {
+  .sidebar { display:none; }
+  #table { min-width:0; }
+  .filters { flex-wrap:wrap; }
+}
+
+/* 在窄屏上将返回按钮移动到顶部，以便可见（侧栏隐藏时） */
+@media (max-width:900px) {
+    .sidebar-footer { position: fixed; left: 12px; bottom: auto; top: 12px; width: auto; }
+}
