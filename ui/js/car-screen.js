@@ -10,6 +10,275 @@
     const routeStartEnd = {};
     let highlightedRouteId = null;
 
+    // Expose a global toggleMapLayer(type, visible) for floating panel to call
+    window.toggleMapLayer = function(type, visible){
+        try {
+            switch(type){
+                case 'vehicle':
+                    Object.keys(vehicleMarkers).forEach(k=>{
+                        var m = vehicleMarkers[k]; if (m && m.setMap) m.setMap(visible ? amap : null);
+                    });
+                    break;
+                case 'warehouse':
+                    setMarkersVisibility(siteMarkers.warehouses, visible);
+                    break;
+                case 'store':
+                    setMarkersVisibility(siteMarkers.stores, visible);
+                    break;
+                case 'cargo':
+                    // cargo layer not implemented as separate markers in current file; shadow toggle for future
+                    // keep for API compatibility: no-op
+                    break;
+                case 'operation':
+                    // operation routes = all 'normal-' and 'congested-' prefixed polylines (including halos)
+                    Object.keys(routePolylines).forEach(k=>{
+                        if (k.indexOf('normal-')===0 || k.indexOf('congested-')===0 || k.indexOf('halo-normal-')===0 || k.indexOf('halo-congested-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
+                    });
+                    break;
+                case 'test':
+                    Object.keys(routePolylines).forEach(k=>{
+                        if (k.indexOf('test-')===0 || k.indexOf('halo-test-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
+                    });
+                    break;
+                default:
+                    // unknown type
+                    break;
+            }
+        } catch(e){ console.warn('toggleMapLayer error', e); }
+    };
+
+    // 数据接口预留示例
+    window.updateVehiclePanel = function(data) {
+        document.getElementById('total-value').textContent = data.totalValue || '128';
+        document.getElementById('stat-onroad').textContent = data.onroadTitle || '在途车辆';
+        document.getElementById('onroad-value').textContent = data.onroadValue || '56';
+        document.getElementById('stat-abnormal').textContent = data.abnormalTitle || '异常车辆';
+        document.getElementById('abnormal-value').textContent = data.abnormalValue || '2';
+        document.getElementById('stat-idle').textContent = data.idleTitle || '空闲车辆';
+        document.getElementById('idle-value').textContent = data.idleValue || '60';
+        document.getElementById('stat-charging').textContent = data.chargingTitle || '充电车辆';
+        document.getElementById('charging-value').textContent = data.chargingValue || '10';
+        document.getElementById('vehicle-id').textContent = data.vehicleId || '000001';
+        document.getElementById('vehicle-type').textContent = data.vehicleType || '普通';
+        document.getElementById('vehicle-capacity').textContent = data.vehicleCapacity || '6立方';
+        document.getElementById('vehicle-battery').textContent = data.vehicleBattery || '100%';
+        document.getElementById('vehicle-speed').textContent = data.vehicleSpeed || '10km/h';
+        document.getElementById('vehicle-route').textContent = data.vehicleRoute || 'xx->xxx';
+        document.getElementById('vehicle-eta').textContent = data.vehicleEta || '2025-9-11 18:00';
+        // 实时画面接口预留
+        if (data.videoElement) {
+            const videoContainer = document.getElementById('vehicle-video');
+            videoContainer.innerHTML = '';
+            videoContainer.appendChild(data.videoElement);
+        }
+    };
+
+    window.addEventListener('DOMContentLoaded', ()=>{
+        renderCharts();
+        // try to initialize AMap; use retry wrapper in case script loads slowly
+        ensureInitMap(12, 300);
+        // 如果 URL 中带有 vehicle 参数，尝试在地图与标记就绪后聚焦该车辆
+        (function(){
+            function getQueryParam(name){
+                try{
+                    const params = new URLSearchParams(window.location.search);
+                    return params.get(name);
+                }catch(e){
+                    // fallback simple parse
+                    const m = window.location.search.match(new RegExp('[?&]'+name+'=([^&]+)'));
+                    return m && decodeURIComponent(m[1]);
+                }
+            }
+
+            const vid = getQueryParam('vehicle');
+            if (!vid) return;
+
+            // wait for amap and vehicleMarkers to be ready
+            let attempts = 0;
+            const maxAttempts = 40; // ~40*300ms = 12s
+            const tid = setInterval(function(){
+                attempts++;
+                if (typeof amap !== 'undefined' && amap && Object.keys(vehicleMarkers).length > 0) {
+                    clearInterval(tid);
+                    try { focusVehicleById(vid); } catch(e){ console.warn('focusVehicleById failed', e); }
+                    return;
+                }
+                if (attempts >= maxAttempts) { clearInterval(tid); console.warn('focusVehicleById: vehicle markers not ready'); }
+            }, 300);
+        })();
+        // initialize trip chart and show default or mock data
+        initTripChart();
+        updateTripChartForRoute(null, null);
+        window.addEventListener('resize', onResize);
+        // 点击页面空白处取消高亮（点击 route-item 会 stopPropagation）
+        document.addEventListener('click', () => {
+            clearHighlight();
+        });
+        // 点击地图空白也取消高亮（通过 amap 的 click 事件）
+        if (amap && amap.on) {
+            amap.on('click', () => { clearHighlight(); });
+        }
+
+        // 聚焦车辆并在右侧面板展示信息
+        function focusVehicleById(id){
+            if (!id) return;
+            const marker = vehicleMarkers[id] || null;
+            // try to find vehicle info from data source
+            const vehicles = getVehiclesMap() || {};
+            let info = null;
+            if (Array.isArray(vehicles)) info = vehicles.find(v=> (v.id||v.vehicleId||v.carId) == id) || null;
+            else if (vehicles && typeof vehicles === 'object') info = vehicles[id] || Object.values(vehicles).find(v=> (v.id||'')==id) || null;
+
+            if (marker && amap) {
+                try {
+                    // set view
+                    try { amap.setZoom(16); } catch(e){}
+                    // marker.getPosition may return LngLat object
+                    let pos = null;
+                    try { pos = marker.getPosition(); } catch(e){}
+                    if (pos && typeof pos.getLng === 'function') {
+                        amap.setCenter([pos.getLng(), pos.getLat()]);
+                    } else if (Array.isArray(pos) && pos.length>=2) {
+                        amap.setCenter([pos[0], pos[1]]);
+                    } else if (info && info.lng && info.lat) {
+                        amap.setCenter([info.lng, info.lat]);
+                    }
+
+                    // 更新右侧信息面板（替代弹窗）
+                    if (typeof window.updateVehiclePanel === 'function') {
+                        try {
+                            window.updateVehiclePanel({
+                                vehicleId: id,
+                                vehicleType: (info && (info.type||info.vehicleType)) || '',
+                                vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
+                                vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
+                                vehicleSpeed: (info && info.speed) || '',
+                                vehicleRoute: (info && (info.routeId||info.route)) || ''
+                            });
+                        } catch(e){ console.warn('updateVehiclePanel in focus failed', e); }
+                    }
+                } catch(e){ console.warn('focusVehicleById error', e); }
+                return;
+            }
+
+            // fallback: if marker not found, try to center using info coords
+            if (info && info.lng && info.lat && amap) {
+                try { amap.setZoom(16); amap.setCenter([info.lng, info.lat]); } catch(e){ console.warn(e); }
+                if (typeof window.updateVehiclePanel === 'function') {
+                    window.updateVehiclePanel({
+                        vehicleId: id,
+                        vehicleType: (info && (info.type||info.vehicleType)) || '',
+                        vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
+                        vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
+                        vehicleSpeed: (info && info.speed) || '',
+                        vehicleRoute: (info && (info.routeId||info.route)) || ''
+                    });
+                }
+            }
+        }
+
+        const panel = document.getElementById('floatingPanel');
+        if (!panel) return;
+        // helper to apply visual state on label
+        function applyLabelState(checkbox){
+            const label = checkbox && checkbox.closest('.panel-checkbox');
+            if (!label) return;
+            if (checkbox.checked) {
+                label.classList.remove('panel-off');
+                label.setAttribute('aria-pressed', 'true');
+            } else {
+                label.classList.add('panel-off');
+                label.setAttribute('aria-pressed', 'false');
+            }
+            // small ripple animation
+            label.classList.add('panel-toggle-anim');
+            setTimeout(()=>label.classList.remove('panel-toggle-anim'), 220);
+        }
+
+        // on change, call toggleMapLayer and update visuals
+        panel.addEventListener('change', function(e) {
+        if (e.target && e.target.type === 'checkbox') {
+            const type = e.target.getAttribute('data-type');
+            const checked = e.target.checked;
+            applyLabelState(e.target);
+            if (window.toggleMapLayer) {
+                window.toggleMapLayer(type, checked);
+            }
+        }
+        });
+
+        // initialize from current checkboxes so map layers reflect defaults
+        const boxes = panel.querySelectorAll('input[type="checkbox"][data-type]');
+        boxes.forEach(function(b){
+            try { applyLabelState(b); } catch(e){}
+            try { if (window.toggleMapLayer) window.toggleMapLayer(b.getAttribute('data-type'), b.checked); } catch(e){}
+        });
+    });
+
+    const routeId = getQueryParam('route');
+    const warehouseId = getQueryParam('warehouse');
+
+    if (!routeId && !warehouseId) return;
+
+    // wait for map and layers ready (similar polling used for vehicle)
+    let attempts = 0;
+    const maxAttempts = 40;
+    const tid = setInterval(function(){
+        attempts++;
+        if (typeof amap !== 'undefined' && amap) {
+            clearInterval(tid);
+            try {
+                if (routeId) {
+                    // try to find polyline and focus it
+                    // try to find a polyline keyed by type-routeId like 'normal-<id>' or 'congested-<id>'
+                    let poly = null;
+                    try {
+                        const keys = Object.keys(routePolylines || {});
+                        for (let k of keys) {
+                            if (!k) continue;
+                            if (k === routeId || k.endsWith('-' + routeId) || k.indexOf(routeId) !== -1) { poly = routePolylines[k]; break; }
+                        }
+                    } catch(e){ poly = routePolylines[routeId]; }
+                    if (poly && (typeof poly.getPath === 'function' || typeof poly.getBounds === 'function')) {
+                        try {
+                            if (typeof amap.setFitView === 'function') amap.setFitView(poly);
+                            else if (typeof poly.getBounds === 'function') amap.setBounds(poly.getBounds());
+                        } catch(e){ /* ignore fit errors */ }
+                        // highlight
+                        try { poly.setOptions({ strokeWeight: 8 }); } catch(e){}
+                        highlightedRouteId = routeId;
+                        updateTripChartForRoute(routeId, null);
+                    } else {
+                        // fallback: if route start/end coords exist
+                        const re = routeStartEnd[routeId];
+                        if (re && re.start) {
+                            amap.setCenter([re.start.lng, re.start.lat]);
+                            amap.setZoom(14);
+                        }
+                    }
+                }
+                if (warehouseId) {
+                    // find warehouse coords from WAREHOUSES or STORES
+                    const find = (WAREHOUSES.concat(STORES)).find(s => (
+                        s.name === warehouseId || String(s.name) === String(warehouseId) ||
+                        s.warehouseId === warehouseId || String(s.warehouseId) === String(warehouseId) ||
+                        s.id === warehouseId || String(s.id) === String(warehouseId)
+                    ));
+                    const found = find || (WAREHOUSES.concat(STORES)).find(s => (String(s.lng) && String(s.lat) && (s.name && s.name.includes(warehouseId))));
+                    if (found && found.lng && found.lat) {
+                        amap.setCenter([found.lng, found.lat]);
+                        amap.setZoom(15);
+                    }
+                }
+            } catch(e){ console.warn('focus route/warehouse failed', e); }
+            return;
+        }
+        if (attempts >= maxAttempts) {
+            clearInterval(tid);
+            console.warn('amap not ready for route/warehouse focus');
+        }
+    }, 300);
+
     // helpers to read globals declared with const/let (which may not be on window)
     function getVehiclesMap(){
         if (typeof vehiclesData !== 'undefined') return vehiclesData;
@@ -227,16 +496,6 @@
         // 在地图上绘制仓库（蓝色小圆点）和门店（黄色小圆点）
         try {
             WAREHOUSES.forEach(function(w){
-                // 小圆点与一个半透明填充圈以提升可见性
-                const circle = new AMap.Circle({
-                    center: [w.lng, w.lat],
-                    radius: 45,
-                    strokeWeight: 0,
-                    fillColor: '#2b6cff',
-                    fillOpacity: 0.95,
-                    zIndex: 140
-                });
-                circle.setMap(amap);
                 const marker = new AMap.Marker({ position: [w.lng, w.lat], content: '<div style="width:18px;height:18px;border-radius:50%;background:#2b6cff;border:2px solid #fff"></div>', offset: new AMap.Pixel(-6, -6), zIndex:150 });
                 marker.setMap(amap);
                 marker.on('mouseover', function(){
@@ -244,27 +503,16 @@
                     iw.open(amap, [w.lng, w.lat]);
                 });
                 // track markers so we can show/hide later
-                siteMarkers.warehouses.push(circle);
                 siteMarkers.warehouses.push(marker);
             });
 
             STORES.forEach(function(s){
-                const circle = new AMap.Circle({
-                    center: [s.lng, s.lat],
-                    radius: 40,
-                    strokeWeight: 0,
-                    fillColor: '#ffd24d',
-                    fillOpacity: 0.95,
-                    zIndex: 140
-                });
-                circle.setMap(amap);
                 const marker = new AMap.Marker({ position: [s.lng, s.lat], content: '<div style="width:18px;height:18px;border-radius:50%;background:#ffd24d;border:2px solid #fff"></div>', offset: new AMap.Pixel(-6, -6), zIndex:150 });
                 marker.setMap(amap);
                 marker.on('mouseover', function(){
                     const iw = new AMap.InfoWindow({ content: `<div style="font-size:13px;color:#000"><b>${s.name}</b><br/>${s.address}</div>`, offset: new AMap.Pixel(0,-10) });
                     iw.open(amap, [s.lng, s.lat]);
                 });
-                siteMarkers.stores.push(circle);
                 siteMarkers.stores.push(marker);
             });
         } catch(e){ console.warn('draw warehouses/stores failed', e); }
@@ -419,43 +667,6 @@
         });
     }
 
-    // Expose a global toggleMapLayer(type, visible) for floating panel to call
-    window.toggleMapLayer = function(type, visible){
-        try {
-            switch(type){
-                case 'vehicle':
-                    Object.keys(vehicleMarkers).forEach(k=>{
-                        var m = vehicleMarkers[k]; if (m && m.setMap) m.setMap(visible ? amap : null);
-                    });
-                    break;
-                case 'warehouse':
-                    setMarkersVisibility(siteMarkers.warehouses, visible);
-                    break;
-                case 'store':
-                    setMarkersVisibility(siteMarkers.stores, visible);
-                    break;
-                case 'cargo':
-                    // cargo layer not implemented as separate markers in current file; shadow toggle for future
-                    // keep for API compatibility: no-op
-                    break;
-                case 'operation':
-                    // operation routes = all 'normal-' and 'congested-' prefixed polylines (including halos)
-                    Object.keys(routePolylines).forEach(k=>{
-                        if (k.indexOf('normal-')===0 || k.indexOf('congested-')===0 || k.indexOf('halo-normal-')===0 || k.indexOf('halo-congested-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
-                    });
-                    break;
-                case 'test':
-                    Object.keys(routePolylines).forEach(k=>{
-                        if (k.indexOf('test-')===0 || k.indexOf('halo-test-')===0){ var l = routePolylines[k]; if (l && l.setMap) l.setMap(visible ? amap : null); }
-                    });
-                    break;
-                default:
-                    // unknown type
-                    break;
-            }
-        } catch(e){ console.warn('toggleMapLayer error', e); }
-    };
-
     // ensure AMap is ready before initializing - retry wrapper to handle slow script/network
     function ensureInitMap(retries, interval){
         retries = typeof retries === 'number' ? retries : 10;
@@ -523,184 +734,13 @@
 
     function onResize(){ Object.values(charts).forEach(c=>c && c.resize && c.resize()); }
 
-    window.addEventListener('DOMContentLoaded', ()=>{
-        renderCharts();
-        // try to initialize AMap; use retry wrapper in case script loads slowly
-        ensureInitMap(12, 300);
-        // 如果 URL 中带有 vehicle 参数，尝试在地图与标记就绪后聚焦该车辆
-        (function(){
-            function getQueryParam(name){
-                try{
-                    const params = new URLSearchParams(window.location.search);
-                    return params.get(name);
-                }catch(e){
-                    // fallback simple parse
-                    const m = window.location.search.match(new RegExp('[?&]'+name+'=([^&]+)'));
-                    return m && decodeURIComponent(m[1]);
-                }
-            }
-
-            const vid = getQueryParam('vehicle');
-            if (!vid) return;
-
-            // wait for amap and vehicleMarkers to be ready
-            let attempts = 0;
-            const maxAttempts = 40; // ~40*300ms = 12s
-            const tid = setInterval(function(){
-                attempts++;
-                if (typeof amap !== 'undefined' && amap && Object.keys(vehicleMarkers).length > 0) {
-                    clearInterval(tid);
-                    try { focusVehicleById(vid); } catch(e){ console.warn('focusVehicleById failed', e); }
-                    return;
-                }
-                if (attempts >= maxAttempts) { clearInterval(tid); console.warn('focusVehicleById: vehicle markers not ready'); }
-            }, 300);
-        })();
-        // initialize trip chart and show default or mock data
-        initTripChart();
-        updateTripChartForRoute(null, null);
-        window.addEventListener('resize', onResize);
-        // 点击页面空白处取消高亮（点击 route-item 会 stopPropagation）
-        document.addEventListener('click', () => {
-            clearHighlight();
-        });
-        // 点击地图空白也取消高亮（通过 amap 的 click 事件）
-        if (amap && amap.on) {
-            amap.on('click', () => { clearHighlight(); });
-        }
-
-        // 聚焦车辆并在右侧面板展示信息
-        function focusVehicleById(id){
-            if (!id) return;
-            const marker = vehicleMarkers[id] || null;
-            // try to find vehicle info from data source
-            const vehicles = getVehiclesMap() || {};
-            let info = null;
-            if (Array.isArray(vehicles)) info = vehicles.find(v=> (v.id||v.vehicleId||v.carId) == id) || null;
-            else if (vehicles && typeof vehicles === 'object') info = vehicles[id] || Object.values(vehicles).find(v=> (v.id||'')==id) || null;
-
-            if (marker && amap) {
-                try {
-                    // set view
-                    try { amap.setZoom(16); } catch(e){}
-                    // marker.getPosition may return LngLat object
-                    let pos = null;
-                    try { pos = marker.getPosition(); } catch(e){}
-                    if (pos && typeof pos.getLng === 'function') {
-                        amap.setCenter([pos.getLng(), pos.getLat()]);
-                    } else if (Array.isArray(pos) && pos.length>=2) {
-                        amap.setCenter([pos[0], pos[1]]);
-                    } else if (info && info.lng && info.lat) {
-                        amap.setCenter([info.lng, info.lat]);
-                    }
-
-                    // 更新右侧信息面板（替代弹窗）
-                    if (typeof window.updateVehiclePanel === 'function') {
-                        try {
-                            window.updateVehiclePanel({
-                                vehicleId: id,
-                                vehicleType: (info && (info.type||info.vehicleType)) || '',
-                                vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
-                                vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
-                                vehicleSpeed: (info && info.speed) || '',
-                                vehicleRoute: (info && (info.routeId||info.route)) || ''
-                            });
-                        } catch(e){ console.warn('updateVehiclePanel in focus failed', e); }
-                    }
-                } catch(e){ console.warn('focusVehicleById error', e); }
-                return;
-            }
-
-            // fallback: if marker not found, try to center using info coords
-            if (info && info.lng && info.lat && amap) {
-                try { amap.setZoom(16); amap.setCenter([info.lng, info.lat]); } catch(e){ console.warn(e); }
-                if (typeof window.updateVehiclePanel === 'function') {
-                    window.updateVehiclePanel({
-                        vehicleId: id,
-                        vehicleType: (info && (info.type||info.vehicleType)) || '',
-                        vehicleCapacity: (info && (info.capacity||info.loadCapacity)) || '',
-                        vehicleBattery: (info && (info.battery||info.batteryLevel)) || '',
-                        vehicleSpeed: (info && info.speed) || '',
-                        vehicleRoute: (info && (info.routeId||info.route)) || ''
-                    });
-                }
-            }
-        }
-    });
-
     // 新增：支持 route 和 warehouse 参数的自动聚焦
-    (function(){
-        function getQueryParam(name){
-            try {
-                const params = new URLSearchParams(window.location.search);
-                return params.get(name);
-            } catch(e) { return null; }
-        }
-
-        const routeId = getQueryParam('route');
-        const warehouseId = getQueryParam('warehouse');
-
-        if (!routeId && !warehouseId) return;
-
-        // wait for map and layers ready (similar polling used for vehicle)
-        let attempts = 0;
-        const maxAttempts = 40;
-        const tid = setInterval(function(){
-            attempts++;
-            if (typeof amap !== 'undefined' && amap) {
-                clearInterval(tid);
-                try {
-                    if (routeId) {
-                        // try to find polyline and focus it
-                        // try to find a polyline keyed by type-routeId like 'normal-<id>' or 'congested-<id>'
-                        let poly = null;
-                        try {
-                            const keys = Object.keys(routePolylines || {});
-                            for (let k of keys) {
-                                if (!k) continue;
-                                if (k === routeId || k.endsWith('-' + routeId) || k.indexOf(routeId) !== -1) { poly = routePolylines[k]; break; }
-                            }
-                        } catch(e){ poly = routePolylines[routeId]; }
-                        if (poly && (typeof poly.getPath === 'function' || typeof poly.getBounds === 'function')) {
-                            try {
-                                if (typeof amap.setFitView === 'function') amap.setFitView(poly);
-                                else if (typeof poly.getBounds === 'function') amap.setBounds(poly.getBounds());
-                            } catch(e){ /* ignore fit errors */ }
-                            // highlight
-                            try { poly.setOptions({ strokeWeight: 8 }); } catch(e){}
-                            highlightedRouteId = routeId;
-                            updateTripChartForRoute(routeId, null);
-                        } else {
-                            // fallback: if route start/end coords exist
-                            const re = routeStartEnd[routeId];
-                            if (re && re.start) {
-                                amap.setCenter([re.start.lng, re.start.lat]);
-                                amap.setZoom(14);
-                            }
-                        }
-                    }
-                    if (warehouseId) {
-                        // find warehouse coords from WAREHOUSES or STORES
-                        const find = (WAREHOUSES.concat(STORES)).find(s => (
-                            s.name === warehouseId || String(s.name) === String(warehouseId) ||
-                            s.warehouseId === warehouseId || String(s.warehouseId) === String(warehouseId) ||
-                            s.id === warehouseId || String(s.id) === String(warehouseId)
-                        ));
-                        const found = find || (WAREHOUSES.concat(STORES)).find(s => (String(s.lng) && String(s.lat) && (s.name && s.name.includes(warehouseId))));
-                        if (found && found.lng && found.lat) {
-                            amap.setCenter([found.lng, found.lat]);
-                            amap.setZoom(15);
-                        }
-                    }
-                } catch(e){ console.warn('focus route/warehouse failed', e); }
-                return;
-            }
-            if (attempts >= maxAttempts) {
-                clearInterval(tid);
-                console.warn('amap not ready for route/warehouse focus');
-            }
-        }, 300);
-    })();
+    function getQueryParam(name){
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        } catch(e) { return null; }
+    }
 
 })();
 

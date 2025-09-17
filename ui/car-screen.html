@@ -4,18 +4,19 @@
     <meta charset="UTF-8">
     <title>无人车数据大屏 - 网联末端物流</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/car-screen.css">
     <link rel="stylesheet" href="css/order-panel.css">
     <link rel="stylesheet" href="css/warehouse-panel.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <script src="js/echarts.min.js"></script>
+    <link rel="stylesheet" href="css/vehicle-info-panel.css">
+    <link rel="stylesheet" href="css/grid-info-panel.css">
     <script src="https://webapi.amap.com/maps?v=2.0&key=c9e8ebb3f3c7ada55ea870cd341d7c36&plugin=AMap.Scale,AMap.ToolBar,AMap.MapType,AMap.Map3D,AMap.Buildings"></script>
+    <script src="js/echarts.min.js"></script>
     <script src="js/data.js"></script>
     <script src="js/500106_500107_streets.js"></script>
     <script src="js/car-screen.js" defer></script>
     <script src="js/order-panel.js" defer></script>
-    <script src="js/floating-panel.js" defer></script>
 </head>
 <body>
     <div class="top-title">自动驾驶物流大脑</div>
@@ -30,17 +31,17 @@
                     <span class="summary-num">--</span>
                 </div>
                 <div class="metric" id="order-finished">
-                    <span class="summary-label">今日已完成</span>
+                    <span class="summary-label"><a href="/orders-manage.html?status=%E5%B7%B2%E5%AE%8C%E6%88%90">今日已完成</a></span>
                     <span class="summary-num">--</span>
                 </div>
             </div>
             <div style="display: flex; margin: 0px 6px; margin-top: 8px;">
                 <div class="metric" id="order-intransit">
-                    <span class="summary-label">在途订单</span>
+                    <span class="summary-label"><a href="/orders-manage.html?status=%E9%85%8D%E9%80%81%E4%B8%AD">在途订单</a></span>
                     <span class="summary-num">12</span>
                 </div>
                 <div class="metric" id="order-abnormal">
-                    <span class="summary-label">异常订单</span>
+                    <span class="summary-label"><a href="/orders-manage.html?status=%E5%BC%82%E5%B8%B8">异常订单</a></span>
                     <span class="summary-num">2</span>
                 </div>
             </div>
@@ -85,27 +86,17 @@
             <script src="js/warehouse-panel.js"></script>
         </div>
     </div>
+    
+    <!-- 浮动跳转按钮：固定到页面右下角，点击跳转到 route-manage.html -->
+    <a id="route-manage-btn" class="floating-route-btn" href="/route-manage.html" title="路线管理">
+        <i class="bi bi-geo-alt-fill"></i>路线管理
+    </a>
 
     <!-- 主体区域（地图/可视化） -->
     <div class="center-area">
+
         <!-- 浮动选择面板，左上角 -->
         <div class="floating-panel" id="floatingPanel">
-            <div class="panel-group">
-                <label class="panel-checkbox">
-                    <input type="checkbox" checked data-type="cargo"> 货物
-                </label>
-                <label class="panel-checkbox">
-                    <input type="checkbox" checked data-type="vehicle"> 车辆
-                </label>
-            </div>
-            <div class="panel-group">
-                <label class="panel-checkbox">
-                    <input type="checkbox" checked data-type="warehouse"> 仓库
-                </label>
-                <label class="panel-checkbox">
-                    <input type="checkbox" checked data-type="store"> 门店
-                </label>
-            </div>
             <div class="panel-group panel-label">
                 总线路 <span class="panel-value">999</span>
             </div>
@@ -121,6 +112,22 @@
                     <span class="panel-value">99</span>
                 </label>
             </div>
+            <div class="panel-group">
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="warehouse"> 仓库
+                </label>
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="store"> 门店
+                </label>
+            </div>
+            <div class="panel-group">
+                <!-- <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="cargo"> 货物
+                </label> -->
+                <label class="panel-checkbox">
+                    <input type="checkbox" checked data-type="vehicle"> 车辆
+                </label>
+            </div>
         </div>
         <div class="visual">
             <div class="map-3d-wrap">
@@ -134,15 +141,63 @@
 
     <!-- 右侧面板 -->
     <div class="right-panels">
-        <div class="panel u-neon-fixed" style="height: 58%;">
+        <div class="panel u-neon-fixed" style="height: 58%; border: 1.5px solid #1e90ff;">
             <!-- 车辆信息子面板嵌入 -->
-            <div id="vehicle-info-panel-container"></div>
-            <link rel="stylesheet" href="css/vehicle-info-panel.css">
-            <script src="js/vehicle-info-panel.js"></script>
+            <div class="vehicle-info-panel">
+                <div class="panel-header" id="vehicle-total">
+                    <a href="/car-manage.html">车辆总数</a> <span class="stat-value" id="total-value">128</span>
+                </div>
+                <div class="panel-stats-4">
+                    <a class="stat-link" href="/car-manage.html?status=%E9%85%8D%E9%80%81%E4%B8%AD" title="查看配送中车辆">
+                        <div class="stat-block">
+                            <div class="stat-label" id="stat-onroad">在途<br>车辆</div>
+                            <div class="stat-value" id="onroad-value">56</div>
+                        </div>
+                    </a>
+                    <a class="stat-link" href="/car-manage.html?status=%E7%A9%BA%E9%97%B4" title="查看空闲车辆">
+                        <div class="stat-block">
+                            <div class="stat-label" id="stat-idle">空闲<br>车辆</div>
+                            <div class="stat-value" id="idle-value">5</div>
+                        </div>
+                    </a>
+                    <a class="stat-link" href="/car-manage.html?status=%E5%85%85%E7%94%B5%E4%B8%AD" title="查看充电中车辆">
+                        <div class="stat-block">
+                            <div class="stat-label" id="stat-charging">充电<br>车辆</div>
+                            <div class="stat-value" id="charging-value">10</div>
+                        </div>
+                    </a>
+                    <a class="stat-link" href="/car-manage.html?status=%E5%BC%82%E5%B8%B8" title="查看异常车辆">
+                        <div class="stat-block">
+                            <div class="stat-label" id="stat-abnormal">异常<br>车辆</div>
+                            <div class="stat-value" id="abnormal-value">2</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="panel-info">
+                    <div class="info-col">
+                        <div class="info-row">当前车ID：<span id="vehicle-id">000001</span></div>
+                        <div class="info-row">车辆类型：<span id="vehicle-type">普通</span></div>
+                        <div class="info-row">容量：<span id="vehicle-capacity">6立方</span></div>
+                    </div>
+                    <div class="info-col">
+                        <div class="info-row">电量：<span id="vehicle-battery">100%</span></div>
+                        <div class="info-row">速度：<span id="vehicle-speed">10km/h</span></div>
+                        <div class="info-row">路线：<span id="vehicle-route">xx-&gt;xxx</span></div>
+                    </div>
+                </div>
+                <div class="info-row eta-row" style="margin: 4px 0 0 0; text-align: left; font-size: 1.01rem;">
+                    预计送达时间：<span id="vehicle-eta">2025-9-11 18:00</span>
+                </div>
+                <div class="panel-video-block">
+                    <div class="panel-video-title">当前实时画面：</div>
+                    <div class="panel-video" id="vehicle-video">
+                        <div class="video-placeholder">实时画面接口预留</div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="panel u-neon-fixed" style="height: 36%; display: flex; flex-direction: column; justify-content: center; align-items: stretch; padding: 0;">
             <!-- 网格员信息面板组件 -->
-            <link rel="stylesheet" href="css/grid-info-panel.css">
             <div class="grid-panel" id="grid-info-panel">
                 <div class="grid-panel-header">
                     <span class="grid-panel-title"><a href="/gridmember-profile.html">网格员总数：</a><span class="grid-panel-value" id="total-count">99</span></span>

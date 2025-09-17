@@ -32,6 +32,12 @@ function filterOrders() {
     const address = valForIds(['filterAddress','filter-address']);
     const point = valForIds(['filterPoint','filter-point']);
     const status = valForIds(['filterStatus','filter-status']);
+    // 状态别名映射：当用户请求某一语义状态时，兼容数据中可能的不同表述
+    const STATUS_ALIASES = {
+        '已完成': ['已完成', '已签收', '完成'],
+        '配送中': ['配送中', '配送进行中', '运输中', '派送中'],
+        '异常': ['异常', '问题', '待处理', '故障']
+    };
     const tableBody = document.getElementById('table-body');
 
     // 使用页面上可用的 orders 数据源：优先页面作用域的 `orders`（data.js 中可能使用 const/let 声明），
@@ -64,7 +70,12 @@ function filterOrders() {
         const matchesPhone = phone === '' || ((o.addresseePhone || o.receiverPhone || o.senderPhone || o.phone || '') + '').includes(phone);
         const matchesAddress = address === '' || ((o.address || o.receiverAddress || o.senderAddress || '') + '').includes(address);
         const matchesPoint = point === '' || ((o.warehouseId || o.warehouse || o.point || '') + '').includes(point);
-        const matchesStatus = status === '' || ((o.status || '') + '').includes(status);
+        const matchesStatus = (function(){
+            if (!status) return true;
+            const ostat = (o.status || '') + '';
+            const aliases = STATUS_ALIASES[status] || [status];
+            return aliases.some(a => ostat.includes(a));
+        })();
         return matchesOrderId && matchesAddressee && matchesPhone && matchesAddress && matchesPoint && matchesStatus;
     }) : [];
     if (tableBody) {
@@ -87,10 +98,10 @@ function filterOrders() {
                 <td>${order.senderPhone + '<br>' + order.senderAddress}</td>
                 <td>${order.addressee || order.receiver || ''}</td>
                 <td>${order.addresseePhone + '<br>' + order.address}</td>
-                <td>${(order.warehouseId || order.warehouse) ? `<a href="car-screen.html?warehouse=${encodeURIComponent(order.warehouseId||order.warehouse)}" class="link-to-map" target="_blank" rel="noopener">${order.warehouseId || order.warehouse}</a>` : ''}</td>
+                <td>${(order.warehouseId || order.warehouse) ? `<a href="car-screen.html?warehouse=${encodeURIComponent(order.warehouseId||order.warehouse)}" class="link-to-map" target="_blank" rel="noopener">${order.warehouseId || order.warehouse}</a>` : '--'}</td>
                 <td>${order.routeId ? `<a href="car-screen.html?route=${encodeURIComponent(order.routeId)}" class="link-to-map" target="_blank" rel="noopener">${order.routeId}</a>` : ''}</td>
                 <td>${(order.vehicleId || order.carId) ? `<a href="car-screen.html?vehicle=${encodeURIComponent(order.vehicleId||order.carId)}" class="link-to-map" target="_blank" rel="noopener">${order.vehicleId || order.carId}</a>` : ''}</td>
-                <td>${order.gridMemberId || order.courierId || ''}</td>
+                <td>${order.gridMemberId || order.courierId || '--'}</td>
             `;
             tr.addEventListener('click', () => showDetail(order));
             // prevent row click when clicking the map links
@@ -416,8 +427,40 @@ document.addEventListener('DOMContentLoaded', () => {
             // 网格员页面：加载列表并绑定筛选
             fetchGridMembers().then(list => renderTable(Array.isArray(list) ? list : [])).catch(err => { console.error(err); renderTable([]); });
         } else if (page === 'orders-manage') {
-            // 订单页面：尝试从全局或远程获取 orders 数据
+            // 订单页面：渲染当前可用数据（若无数据则会显示空），并在后台等待 orders 数据以应用 URL 的 status 参数
             try { filterOrders(); } catch (e) { console.error('filterOrders failed', e); }
+
+            // 如果 URL 带有 status 参数，则等待 orders 数据可用后再应用筛选（解决异步加载导致的无结果问题）
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const statusParam = params.get('status');
+                if (statusParam) {
+                    const applyStatus = function() {
+                        try {
+                            const select = document.getElementById('filterStatus');
+                            if (select) {
+                                const decoded = decodeURIComponent(statusParam);
+                                let matched = Array.from(select.options).find(o => o.value === statusParam || o.value === decoded || o.text === statusParam || o.text === decoded);
+                                if (matched) select.value = matched.value;
+                                else select.value = decoded;
+                            }
+                        } catch(e) { /* ignore */ }
+                        try { filterOrders(); } catch(e) { console.error('filterOrders after status param failed', e); }
+                    };
+
+                    // Poll for orders data being available
+                    let attempts = 0;
+                    const maxAttempts = 40; // ~40*150ms = 6s
+                    const tid = setInterval(function(){
+                        attempts++;
+                        const hasOrders = (typeof orders !== 'undefined' && Array.isArray(orders)) || Array.isArray(window.orders) || Array.isArray(window.dataOrders) || Array.isArray(window.dataOrdersList);
+                        if (hasOrders || attempts >= maxAttempts) {
+                            clearInterval(tid);
+                            applyStatus();
+                        }
+                    }, 150);
+                }
+            } catch(e) { console.warn('apply status param failed', e); }
         } else if (page === 'route-manage') {
             // 路线管理页面：默认渲染全部路线，并绑定筛选表单
             try {
@@ -436,6 +479,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 const filterForm = document.getElementById('filterForm');
                 if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterCar(); });
             } catch (e) { console.error('car-manage init failed', e); }
+            function getQueryParam(name){
+                try{ const params = new URLSearchParams(window.location.search); return params.get(name); }catch(e){return null}
+            }
+            var status = getQueryParam('status');
+            if (status) {
+                // 允许页面上的 `filterStatus` select 存在时立即填充（当前已在 DOMContentLoaded 回调内）
+                try {
+                    var sel = document.getElementById('filterStatus');
+                    if (sel) {
+                        var decoded = null;
+                        try { decoded = decodeURIComponent(status); } catch(e){ decoded = status; }
+                        var found = Array.from(sel.options).some(function(opt){
+                            if (opt.value === status || opt.value === decoded || opt.text === status || opt.text === decoded) { sel.value = opt.value; return true; }
+                            return false;
+                        });
+                        if (!found) sel.value = decoded;
+                    }
+                } catch (e) { /* ignore */ }
+
+                // 如果车辆数据尚未就绪（异步加载），轮询等待 window.vehiclesData 或 fetchVehicles 出现，随后调用 filterCar
+                (function applyFilterWhenReady(){
+                    var attempts = 0;
+                    var maxAttempts = 40; // ~6s
+                    if (typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData) && typeof filterCar === 'function') {
+                        try { filterCar(); } catch(e) { console.warn('filterCar failed', e); }
+                        return;
+                    }
+                    if (typeof fetchVehicles === 'function') {
+                        // filterCar already handles async fetchVehicles
+                        try { filterCar(); } catch(e) { console.warn('filterCar failed', e); }
+                        return;
+                    }
+                    var tid = setInterval(function(){
+                        attempts++;
+                        if ((typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData)) || typeof fetchVehicles === 'function' || attempts >= maxAttempts) {
+                            clearInterval(tid);
+                            if (typeof filterCar === 'function') {
+                                try { filterCar(); } catch(e) { console.warn('filterCar failed', e); }
+                            }
+                        }
+                    }, 150);
+                })();
+            }
+
         }
     } catch (e) {
         console.error('page init failed', e);
@@ -499,11 +586,25 @@ function filterCar() {
             if (res && typeof res.then === 'function') {
                 res.then(remote => {
                     const arr = normalizeVehicles(remote);
-                    const matched = arr.filter(v => (
-                        (id === '' || (v.id || '').includes(id)) &&
-                        (route === '' || (v.routeId || '').includes(route)) &&
-                        (status === '' || (v.status || '').includes(status))
-                    ));
+                        // 使用与同步分支相同的状态别名匹配
+                        const VEHICLE_STATUS_ALIASES = {
+                            '配送中': ['配送中', '配送进行中', '运输中', '派送中', '在途'],
+                            '在途': ['在途', '配送中'],
+                            '空闲': ['空闲', '待命', '闲置'],
+                            '充电中': ['充电中', '充电'],
+                            '异常': ['异常', '故障', '问题', '待处理']
+                        };
+                        const matched = arr.filter(v => {
+                            const vstatus = (v.status || '') + '';
+                            const statusMatch = (function(){
+                                if (!status) return true;
+                                const aliases = VEHICLE_STATUS_ALIASES[status] || [status];
+                                return aliases.some(a => vstatus.includes(a));
+                            })();
+                            return (id === '' || (v.id || '').includes(id)) &&
+                                   (route === '' || (v.routeId || '').includes(route)) &&
+                                   statusMatch;
+                        });
                     renderVehicleTable(matched);
                 }).catch(err => { console.error('fetchVehicles failed', err); renderVehicleTable([]); });
                 return;
@@ -514,11 +615,26 @@ function filterCar() {
     }
 
     data = normalizeVehicles(data);
-    const matched = data.filter(v => (
-        (id === '' || (v.id || '').includes(id)) &&
-        (route === '' || (v.routeId || '').includes(route)) &&
-        (status === '' || (v.status || '').includes(status))
-    ));
+    // 支持状态别名匹配（例如页面上的“在途”/“配送中”不同表述）
+    const VEHICLE_STATUS_ALIASES = {
+        '配送中': ['配送中', '配送进行中', '运输中', '派送中', '在途'],
+        '在途': ['在途', '配送中'],
+        '空闲': ['空闲', '待命', '闲置'],
+        '充电中': ['充电中', '充电'],
+        '异常': ['异常', '故障', '问题', '待处理']
+    };
+
+    const matched = data.filter(v => {
+        const vstatus = (v.status || '') + '';
+        const statusMatch = (function(){
+            if (!status) return true;
+            const aliases = VEHICLE_STATUS_ALIASES[status] || [status];
+            return aliases.some(a => vstatus.includes(a));
+        })();
+        return (id === '' || (v.id || '').includes(id)) &&
+               (route === '' || (v.routeId || '').includes(route)) &&
+               statusMatch;
+    });
     renderVehicleTable(matched);
 }
 

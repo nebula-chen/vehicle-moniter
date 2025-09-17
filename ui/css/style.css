@@ -419,3 +419,33 @@ body {
     line-height: 1.7;
 }
 
+/* 全局覆盖：隐藏超链接默认下划线并继承当前文本颜色 */
+a { color: inherit; text-decoration: none; }
+a:hover, a:focus, a:active { color: inherit; text-decoration: none; outline: none; }
+/* 如果页面中有需要显式显示链接的地方，可用 .show-link 重写 */
+.show-link { color: initial; text-decoration: underline; }
+
+/* 浮动跳转到路线管理页面的按钮（右下角） */
+.floating-route-btn {
+    position: fixed;
+    left: 24.5%;
+    top: 4.2%;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1.5px solid #1e90ff;;
+    background: linear-gradient(180deg, #1a57dbbb, #16399bbb);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(26,86,219,0.18);
+    z-index: 1200;
+    text-decoration: none;
+    transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+.floating-route-btn i { font-size: 1.35rem; }
+.floating-route-btn:hover, .floating-route-btn:focus {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 36px rgba(26,86,219,0.25);
+}
+.floating-route-btn:active { transform: translateY(-1px) scale(0.98); }

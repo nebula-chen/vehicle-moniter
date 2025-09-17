@@ -294,3 +294,11 @@ h1 {
 @media (max-width:900px) {
     .sidebar-footer { position: fixed; left: 12px; bottom: auto; top: 12px; width: auto; }
 }
+
+/* 全局覆盖：隐藏超链接默认下划线并继承当前文本颜色 */
+a { color: inherit; text-decoration: none; }
+/* a:visited { color: inherit; } */
+a:hover, a:focus, a:active { color: inherit; text-decoration: none; outline: none; }
+/* 如果页面中有需要显式显示链接的地方，可用 .show-link 重写 */
+.show-link { color: initial; text-decoration: underline; }
+
