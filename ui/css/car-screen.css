@@ -95,12 +95,26 @@ html, body { height: 100vh;width: 100%; background: url("../image/bg.jpg"); back
 /* 标题抬头样式 */
 .top-title {
     position: absolute;
-    top: 3vh;
+    top: 1.8%;
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000;  /* 确保浮在最上层 */
-    text-align: center;
-    font-size: 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+}
+
+.top-logo {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.top-title-text {
+    font-size: 28px;
     font-weight: 900;
     color: #ffffff;
     letter-spacing: 2px;

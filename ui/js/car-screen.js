@@ -522,36 +522,70 @@
         if (_plannedList && Array.isArray(_plannedList) && _plannedList.length){
 
             // fetch driving polyline for a segment via 高德 REST API (single helper reused for all routes)
-            function fetchDrivingRoute(origin, destination){
-                return new Promise(function(resolve, reject){
-                    try {
-                        var key = (window.AMAP_KEY || '');
-                        if (!key){
-                            // try to extract from amap script tag
-                            var scripts = document.getElementsByTagName('script');
-                            for (var i=0;i<scripts.length;i++){
-                                var s = scripts[i];
-                                if (s && s.src && s.src.indexOf('webapi.amap.com')!==-1 && s.src.indexOf('key=')!==-1){
-                                    var m = s.src.match(/[?&]key=([^&]+)/);
-                                    if (m && m[1]) { key = decodeURIComponent(m[1]); break; }
-                                }
-                            }
+            // Adds timeout and optional retries. Returns an array of [lng,lat] pairs or rejects.
+            function fetchDrivingRoute(origin, destination, opts){
+                opts = opts || {};
+                var timeoutMs = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 5000;
+                var retries = typeof opts.retries === 'number' ? opts.retries : 1;
+
+                function extractKey(){
+                    var key = (window.AMAP_KEY || '');
+                    if (key) return key;
+                    var scripts = document.getElementsByTagName('script');
+                    for (var i=0;i<scripts.length;i++){
+                        var s = scripts[i];
+                        if (s && s.src && s.src.indexOf('webapi.amap.com')!==-1 && s.src.indexOf('key=')!==-1){
+                            var m = s.src.match(/[?&]key=([^&]+)/);
+                            if (m && m[1]) { return decodeURIComponent(m[1]); }
                         }
-                        if (!key) { reject(new Error('AMap key not found')); return; }
-                        var url = 'https://restapi.amap.com/v3/direction/driving?origin=' + origin[0] + ',' + origin[1] + '&destination=' + destination[0] + ',' + destination[1] + '&extensions=all&key=' + key;
-                        fetch(url).then(function(res){ return res.json(); }).then(function(data){
-                            try {
-                                if (!data || data.status != '1' || !data.route || !data.route.paths || data.route.paths.length === 0) { reject(new Error('no route')); return; }
-                                var path = data.route.paths[0];
-                                var raw = '';
-                                if (path && path.steps && path.steps.length) raw = path.steps.map(function(st){ return st.polyline; }).join(';');
-                                if (!raw) raw = path.polyline;
-                                if (!raw) { reject(new Error('no polyline')); return; }
-                                var pts = raw.split(';').map(function(pair){ var a = pair.split(','); return [ +a[0], +a[1] ]; });
-                                resolve(pts);
-                            } catch(e){ reject(e); }
-                        }).catch(function(err){ reject(err); });
-                    } catch(e){ reject(e); }
+                    }
+                    return '';
+                }
+
+                function singleAttempt(){
+                    return new Promise(function(resolve, reject){
+                        try {
+                            var key = extractKey();
+                            if (!key) { reject(new Error('AMap key not found')); return; }
+                            var url = 'https://restapi.amap.com/v3/direction/driving?origin=' + origin[0] + ',' + origin[1] + '&destination=' + destination[0] + ',' + destination[1] + '&extensions=all&key=' + key;
+                            var abortCtl = null;
+                            // use AbortController if available for timeout
+                            if (typeof AbortController !== 'undefined') {
+                                abortCtl = new AbortController();
+                                setTimeout(function(){ try{ abortCtl.abort(); }catch(e){} }, timeoutMs);
+                            }
+                            var fetchOpts = abortCtl ? { signal: abortCtl.signal } : {};
+                            fetch(url, fetchOpts).then(function(res){ return res.json(); }).then(function(data){
+                                try {
+                                    if (!data || data.status != '1' || !data.route || !data.route.paths || data.route.paths.length === 0) { reject(new Error('no route')); return; }
+                                    var path = data.route.paths[0];
+                                    var raw = '';
+                                    if (path && path.steps && path.steps.length) raw = path.steps.map(function(st){ return st.polyline; }).join(';');
+                                    if (!raw) raw = path.polyline;
+                                    if (!raw) { reject(new Error('no polyline')); return; }
+                                    var pts = raw.split(';').map(function(pair){ var a = pair.split(','); return [ +a[0], +a[1] ]; });
+                                    resolve(pts);
+                                } catch(e){ reject(e); }
+                            }).catch(function(err){ reject(err); });
+                        } catch(e){ reject(e); }
+                    });
+                }
+
+                // attempt up to retries (including first attempt)
+                var attempt = 0;
+                return new Promise(function(resolve, reject){
+                    function tryOnce(){
+                        attempt++;
+                        singleAttempt().then(resolve).catch(function(err){
+                            if (attempt < retries) {
+                                // small backoff
+                                setTimeout(tryOnce, 300);
+                            } else {
+                                reject(err);
+                            }
+                        });
+                    }
+                    tryOnce();
                 });
             }
 
@@ -560,6 +594,16 @@
                 if (!route || !Array.isArray(route.waypoints) || route.waypoints.length < 2) return;
                 (async function(_route, idx){
                     var origWaypoints = (_route.waypoints||[]).map(p=>[+p.lng, +p.lat]);
+                    try {
+                        var rid = _route.id || ('route-' + idx);
+                        // store start/end as fallback for focus logic (used before polyline is ready)
+                        if (!routeStartEnd[rid]) {
+                            routeStartEnd[rid] = {
+                                start: { lng: origWaypoints[0][0], lat: origWaypoints[0][1] },
+                                end: { lng: origWaypoints[origWaypoints.length-1][0], lat: origWaypoints[origWaypoints.length-1][1] }
+                            };
+                        }
+                    } catch(e){ /* ignore */ }
 
                     // drawing implementation re-usable for this route's coords
                     function drawFromCoordsForRoute(coords){
@@ -628,25 +672,39 @@
                     // assemble route by fetching driving segments between consecutive original waypoints
                     try {
                         var coords = origWaypoints.slice();
-                        var all = [];
+                        var segPromises = [];
                         for (var i=0;i<origWaypoints.length-1;i++){
                             var a = origWaypoints[i], b = origWaypoints[i+1];
-                            try {
-                                var seg = await fetchDrivingRoute(a,b);
-                                if (seg && seg.length){
-                                    if (all.length && all[all.length-1][0]===seg[0][0] && all[all.length-1][1]===seg[0][1]) seg.shift();
-                                    all = all.concat(seg);
-                                } else {
-                                    if (all.length===0) all.push(a);
-                                    all.push(b);
-                                }
-                            } catch(e){
-                                console.warn('segment fetch failed, fallback to straight', e);
-                                if (all.length===0) all.push(a);
+                            // set a modest timeout and allow 2 attempts for each segment
+                            segPromises.push(fetchDrivingRoute(a, b, { timeoutMs: 5000, retries: 2 }).then(function(res){ return { ok: true, pts: res }; }).catch(function(err){ return { ok: false, err: err }; }));
+                        }
+
+                        var results = await Promise.all(segPromises);
+                        var all = [];
+                        var anySuccess = false;
+                        for (var si=0; si<results.length; si++){
+                            var r = results[si];
+                            var a = origWaypoints[si];
+                            var b = origWaypoints[si+1];
+                            if (r && r.ok && Array.isArray(r.pts) && r.pts.length){
+                                anySuccess = true;
+                                var seg = r.pts.slice();
+                                // avoid duplicating adjacent points
+                                if (all.length && all[all.length-1][0]===seg[0][0] && all[all.length-1][1]===seg[0][1]) seg.shift();
+                                all = all.concat(seg);
+                            } else {
+                                // fallback for this segment: use straight line (a -> b)
+                                if (!anySuccess && all.length===0) all.push(a);
                                 all.push(b);
                             }
                         }
-                        if (all && all.length >= 2) coords = all;
+
+                        if (anySuccess && all.length >= 2) coords = all;
+                        else {
+                            // no segment succeeded - use original waypoints as fallback
+                            coords = origWaypoints.slice();
+                        }
+
                         // draw using the assembled coords (real route or fallback)
                         drawFromCoordsForRoute(coords);
                     } catch(e){ console.warn('failed to build full route via API', e); }
