@@ -98,18 +98,18 @@ function filterOrders() {
                 <td>${order.senderPhone + '<br>' + order.senderAddress}</td>
                 <td>${order.addressee || order.receiver || ''}</td>
                 <td>${order.addresseePhone + '<br>' + order.address}</td>
-                <td>${(order.warehouseId || order.warehouse) ? `<a href="car-screen.html?warehouse=${encodeURIComponent(order.warehouseId||order.warehouse)}" class="link-to-map" target="_blank" rel="noopener">${order.warehouseId || order.warehouse}</a>` : '--'}</td>
-                <td>${order.routeId ? `<a href="car-screen.html?route=${encodeURIComponent(order.routeId)}" class="link-to-map" target="_blank" rel="noopener">${order.routeId}</a>` : ''}</td>
+                <td>${(order.warehouseId || order.warehouse) ? `<a href="stations-manage.html?station=${encodeURIComponent(order.warehouseId||order.warehouse)}" class="link-to-station" target="_self">${order.warehouseId || order.warehouse}</a>` : '--'}</td>
+                <td>${order.routeId ? `<a href="route-manage.html?route=${encodeURIComponent(order.routeId)}" class="link-to-route" target="_self">${order.routeId}</a>` : ''}</td>
                 <td>${(order.vehicleId || order.carId) ? `<a href="car-screen.html?vehicle=${encodeURIComponent(order.vehicleId||order.carId)}" class="link-to-map" target="_blank" rel="noopener">${order.vehicleId || order.carId}</a>` : ''}</td>
                 <td>${order.gridMemberId || order.courierId || '--'}</td>
             `;
             tr.addEventListener('click', () => showDetail(order));
-            // prevent row click when clicking the map links
-            const links = tr.querySelectorAll('.link-to-map');
+            // prevent row click when clicking station/map/route links
+            const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
             links.forEach(a => {
                 a.addEventListener('click', function(evt){
                     evt.stopPropagation();
-                    // let default navigation happen (opens in new tab due to target="_blank")
+                    // allow default navigation for station links (same tab) or map links (new tab)
                 });
             });
             tableBody.appendChild(tr);
@@ -192,18 +192,18 @@ function filterTasks() {
             <td>${item.startTime || ''}</td>
             <td>${item.status != '已完成' ? item.status : item.status + '<br>' + item.endTime}</td>
             <td>${item.count != null ? item.count : ''}</td>
-            <td>${(item.warehouseId || item.warehouse) ? `<a href="car-screen.html?warehouse=${encodeURIComponent(item.warehouseId||item.warehouse)}" class="link-to-map" target="_blank" rel="noopener">${item.warehouseId || item.warehouse}</a>` : ''}</td>
-            <td>${item.routeId ? `<a href="car-screen.html?route=${encodeURIComponent(item.routeId)}" class="link-to-map" target="_blank" rel="noopener">${item.routeId}</a>` : ''}</td>
+            <td>${(item.warehouseId || item.warehouse) ? `<a href="stations-manage.html?station=${encodeURIComponent(item.warehouseId||item.warehouse)}" class="link-to-station" target="_self">${item.warehouseId || item.warehouse}</a>` : ''}</td>
+            <td>${item.routeId ? `<a href="route-manage.html?route=${encodeURIComponent(item.routeId)}" class="link-to-route" target="_self">${item.routeId}</a>` : ''}</td>
             <td>${item.vehicleId ? `<a href="car-screen.html?vehicle=${encodeURIComponent(item.vehicleId)}" class="link-to-map" target="_blank" rel="noopener">${item.vehicleId}</a>` : ''}</td>
             <td>${item.gridMemberId || item.courierId || ''}</td>
             <td>${item.residualKm != null ? item.residualKm + ' km' : '--'}</td>
             <td>${item.residualTime != null ? item.residualTime + ' min' : '--'}</td>
         `;
         tr.addEventListener('click', () => showDetail(item));
-    // stop row click when clicking map links
-    const links = tr.querySelectorAll('.link-to-map');
-    links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
-    tbody.appendChild(tr);
+        // stop row click when clicking map, station or route links
+        const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
+        links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
+        tbody.appendChild(tr);
     });
 }
 
@@ -250,11 +250,72 @@ function showDetail(item) {
     const container = document.querySelector('.container');
     const page = container && container.getAttribute('data-page');
 
+    // station 页面专属面板 id=`station-detail`（stations-manage.html 使用）
+    const stationPanel = document.getElementById('station-detail');
+    const content = document.getElementById('detail-content');
+    if (stationPanel && content) {
+        const s = item || {};
+        const ul = document.createElement('ul');
+        ul.className = 'info-list';
+
+        function pushItem(label, value) {
+            const li = document.createElement('li');
+            li.className = 'info-item';
+            const l = document.createElement('div');
+            l.className = 'label';
+            l.textContent = label;
+            const v = document.createElement('div');
+            v.className = 'value';
+            if (value instanceof Node) v.appendChild(value);
+            else v.innerHTML = String(value || '--');
+            li.appendChild(l);
+            li.appendChild(v);
+            ul.appendChild(li);
+        }
+
+        pushItem('编号', s.id || '');
+        pushItem('名称', s.name || s.id || '');
+        pushItem('类型', s.type || (s.manager ? '仓库/门店' : ''));
+        pushItem('状态', s.status || '');
+        pushItem('负责人', s.manager || s.contact || '');
+        pushItem('联系方式', s.contactPhone || s.contact || s.phone || '');
+        pushItem('地址', s.address || '');
+        pushItem('所属片区', s.area || '');
+        pushItem('所属路线', s.routeId || s.route || '');
+
+        const vehiclesNode = document.createElement('div');
+        if (Array.isArray(s.vehicles) && s.vehicles.length > 0) {
+            vehiclesNode.innerHTML = s.vehicles.map(v => `<a href="car-screen.html?vehicle=${encodeURIComponent(v)}" target="_blank" rel="noopener">${v}</a>`).join('<br>');
+        } else if (s.vehicles) {
+            vehiclesNode.textContent = String(s.vehicles || '--');
+        } else vehiclesNode.textContent = '--';
+        pushItem('安排车辆', vehiclesNode);
+
+        // 坐标与在地图中查看链接
+        const coord = (s.lng != null && s.lat != null) ? (s.lng + ', ' + s.lat) : (s.location || '--');
+        pushItem('坐标', coord);
+        const link = document.createElement('div');
+        const qk = (s.type && s.type.indexOf('仓库') !== -1) ? 'warehouse' : 'store';
+        const targetUrl = `car-screen.html?${qk}=${encodeURIComponent(s.id || '')}`;
+        link.innerHTML = `<a href="${targetUrl}" target="_blank" rel="noopener">在地图中查看此站点</a>`;
+        pushItem('', link);
+
+        if (s.openingHours) pushItem('营业时间', s.openingHours);
+        if (s.capacityInfo) pushItem('容量信息', s.capacityInfo);
+        if (s.note) pushItem('备注', s.note);
+
+        content.innerHTML = '';
+        content.appendChild(ul);
+        stationPanel.setAttribute('aria-hidden', 'false');
+        stationPanel.style.transform = 'translateX(0)';
+        return;
+    }
+
     // route-manage 页面有专属面板 id=`route-detail`
     if (page === 'route-manage') {
         const panel = document.getElementById('route-detail');
-        const content = document.getElementById('detail-content');
-        if (!panel || !content) return;
+        const routeContent = document.getElementById('detail-content');
+        if (!panel || !routeContent) return;
 
         // 渲染路线详情：支持 id, status, from, to, waypoints, vehicles, createdAt, estimatedDistanceKm, estimatedTimeMin, description
         const r = item || {};
@@ -313,8 +374,8 @@ function showDetail(item) {
         pushItem('', linkNode);
 
         // 替换内容
-        content.innerHTML = '';
-        content.appendChild(ul);
+        routeContent.innerHTML = '';
+        routeContent.appendChild(ul);
 
         panel.setAttribute('aria-hidden', 'false');
         panel.style.transform = 'translateX(0)';
@@ -323,11 +384,11 @@ function showDetail(item) {
 
     // 其它页面使用通用的 detail-panel（如网格员/订单/车辆任务）
     const panel = document.getElementById('detail-panel');
-    const content = document.getElementById('detail-content');
-    if (!panel || !content) return;
+    const commonContent = document.getElementById('detail-content');
+    if (!panel || !commonContent) return;
 
     // 使用统一 info-list 渲染通用详情
-    content.innerHTML = '';
+    commonContent.innerHTML = '';
     const ulCommon = document.createElement('ul');
     ulCommon.className = 'info-list';
 
@@ -363,7 +424,7 @@ function showDetail(item) {
     pushCommon('状态', item.status || '');
     pushCommon('备注', item.note || '');
 
-    content.appendChild(ulCommon);
+    commonContent.appendChild(ulCommon);
     panel.setAttribute('aria-hidden', 'false');
     panel.style.transform = 'translateX(0)';
 }
@@ -384,6 +445,73 @@ function hideDetail() {
         routePanel.setAttribute('aria-hidden', 'true');
         routePanel.style.transform = 'translateX(100%)';
     }
+    const stationPanel = document.getElementById('station-detail');
+    if (stationPanel) {
+        stationPanel.setAttribute('aria-hidden', 'true');
+        stationPanel.style.transform = 'translateX(100%)';
+    }
+}
+
+// Helper: when navigating to stations-manage with station id, apply filter and open detail
+function openStationsAndShowDetail(stationId) {
+    try {
+        // ensure we're on stations-manage page
+        const container = document.querySelector('.container');
+        const page = container && container.getAttribute('data-page');
+        if (page !== 'stations-manage') return;
+
+        // fill station id filter and call filterWarehouse
+        const el = document.getElementById('filter-stationId');
+        if (el) {
+            el.value = stationId || '';
+        }
+        // run filter to render the matching station
+        filterWarehouse();
+
+        // after rendering, find the table row with this id and open detail
+        setTimeout(() => {
+            try {
+                const tbody = document.getElementById('table-body');
+                if (!tbody) return;
+                const row = Array.from(tbody.querySelectorAll('tr')).find(r => (r.dataset.id || '') === String(stationId));
+                // if not found, try to match first cell text
+                let dataItem = null;
+                if (row) {
+                    // trigger click to open detail
+                    row.click();
+                    return;
+                }
+                // fallback: if only one non-empty row, open it
+                const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.classList.contains('table-empty'));
+                if (rows.length === 1) rows[0].click();
+            } catch (e) { console.warn('openStationsAndShowDetail inner failed', e); }
+        }, 120);
+    } catch (e) { console.warn('openStationsAndShowDetail failed', e); }
+}
+
+// Helper: when navigating to route-manage with route id, apply filter and open detail
+function openRoutesAndShowDetail(routeId) {
+    try {
+        const container = document.querySelector('.container');
+        const page = container && container.getAttribute('data-page');
+        if (page !== 'route-manage') return;
+
+        const el = document.getElementById('filter-routeId');
+        if (el) el.value = routeId || '';
+        filterRoutes();
+
+        // after rendering, try to open the detail for the route
+        setTimeout(() => {
+            try {
+                const tbody = document.getElementById('table-body');
+                if (!tbody) return;
+                const row = Array.from(tbody.querySelectorAll('tr')).find(r => (r.dataset.id || '') === String(routeId));
+                if (row) { row.click(); return; }
+                const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.classList.contains('table-empty'));
+                if (rows.length === 1) rows[0].click();
+            } catch (e) { console.warn('openRoutesAndShowDetail inner failed', e); }
+        }, 120);
+    } catch (e) { console.warn('openRoutesAndShowDetail failed', e); }
 }
 
 // 暴露的 fetch 接口（占位）
@@ -478,9 +606,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderRoutes(routes);
                 const filterForm = document.getElementById('filterForm');
                 if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterRoutes(); });
+                // if URL contains route param, apply it and open detail
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    const routeParam = params.get('route');
+                    if (routeParam) {
+                        let decoded = null;
+                        try { decoded = decodeURIComponent(routeParam); } catch(e){ decoded = routeParam; }
+                        openRoutesAndShowDetail(decoded);
+                    }
+                } catch(e) { console.warn('route-manage apply param failed', e); }
             } catch (e) { console.error('route-manage init failed', e); }
         } else if (page === 'car-tasks') {
             try { filterTasks(); } catch (e) { console.error('filterTasks failed', e); }
+        } else if (page === 'stations-manage') {
+            try {
+                // bind stations filter form
+                const filterForm = document.getElementById('filterForm');
+                if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterWarehouse(); });
+                // initial render
+                try { filterWarehouse(); } catch (e) { console.error('filterWarehouse failed', e); }
+
+                // if URL contains station param, apply it and open detail
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    const stationParam = params.get('station');
+                    if (stationParam) {
+                        let decoded = null;
+                        try { decoded = decodeURIComponent(stationParam); } catch(e){ decoded = stationParam; }
+                        openStationsAndShowDetail(decoded);
+                    }
+                } catch(e) { console.warn('stations-manage apply param failed', e); }
+            } catch (e) { console.error('stations-manage init failed', e); }
         } else if (page === 'car-manage') {
             try { 
                 // 初始渲染车辆表格
@@ -714,8 +871,8 @@ function renderRoutes(list) {
             <td>${r.createdAt || ''}</td>
             <td>${r.estimatedDistanceKm != null ? r.estimatedDistanceKm + ' km' : ''}</td>
         `;
-        // prevent row click when clicking links (none currently present)
-        const links = tr.querySelectorAll('.link-to-map');
+        // prevent row click when clicking links
+        const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
         links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
         tr.addEventListener('click', () => showDetail(r));
         tbody.appendChild(tr);
@@ -804,13 +961,13 @@ function renderWarehouseTable(list) {
             <td>${item.status || ''}</td>
             <td>${manager}</td>
             <td>${contact}</td>
-            <td>${route ? `<a href="car-screen.html?route=${encodeURIComponent(route)}" class="link-to-map" target="_blank" rel="noopener">${route}</a>` : ''}</td>
+            <td>${route ? `<a href="route-manage.html?route=${encodeURIComponent(route)}" class="link-to-route" target="_self">${route}</a>` : ''}</td>
             <td>${vehicles}</td>
         `;
 
         tr.addEventListener('click', () => showDetail(item));
-        // prevent row click when clicking map links
-        const links = tr.querySelectorAll('.link-to-map');
+        // prevent row click when clicking map, station or route links
+        const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
         links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
         tbody.appendChild(tr);
     });

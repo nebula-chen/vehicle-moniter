@@ -13,7 +13,7 @@
     <script src="js/secondary.js"></script>
 </head>
 <body>
-    <div class="container" data-page="orders-manage">
+    <div class="container" data-page="stations-manage">
         <!-- 左侧导航栏 -->
         <aside class="sidebar">
             <h2>自动驾驶物流大脑</h2>
@@ -112,6 +112,24 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+            <!-- 侧边详情面板（可用于展示单条记录详情或编辑） -->
+            <aside id="station-detail" class="detail-panel" aria-hidden="true">
+                <div class="detail-header">
+                    <h3>站点详情</h3>
+                    <button id="detail-close" class="btn">X</button>
+                </div>
+                <div class="detail-body">
+                    <!-- 初始容器：JS 将渲染 .info-list/.info-item 结构以展示详情 -->
+                    <div id="detail-content">
+                        <ul class="info-list" aria-live="polite">
+                            <!-- JS 渲染内容占位 -->
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+            <div class="floating-add" id="btn-add" title="新增仓库/门店">
+                <i class="bi bi-plus"></i>
             </div>
         </div>
     </div>
