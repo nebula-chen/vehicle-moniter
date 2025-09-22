@@ -84,14 +84,14 @@ window.vehiclesData = vehiclesData;
 
 // 示例：仓库与门店（供地图与筛选使用，id 可用于订单/任务关联）
 const WAREHOUSES = [
-  { id: 'WH001', name: '大学城仓库', lng: 106.319, lat: 29.611, address: '重庆市大学城' },
-  { id: 'WH002', name: '白市驿仓库', lng: 106.372, lat: 29.495, address: '重庆市白市驿' },
-  { id: 'WH003', name: '高新区仓库', lng: 106.366, lat: 29.520, address: '重庆高新区' }
+  { id: 'WH001', name: '大学城仓库', type: '仓库', manager: '刘经理', contactPhone: '18810000001', lng: 106.319, lat: 29.611, address: '重庆市大学城', area: '大学城片区', routeId: 'route-001', vehicles: ['渝S0001','渝S0002'], status: '空闲', note: '' },
+  { id: 'WH002', name: '白市驿仓库', type: '仓库', manager: '王主管', contactPhone: '18810000002', lng: 106.372, lat: 29.495, address: '重庆市白市驿', area: '白市驿片区', routeId: 'route-002', vehicles: ['渝E0001'], status: '拥挤', note: '高峰期' },
+  { id: 'WH003', name: '高新区仓库', type: '仓库', manager: '张主管', contactPhone: '18810000003', lng: 106.366, lat: 29.520, address: '重庆高新区', area: '高新区', routeId: 'route-004', vehicles: ['渝E0002','渝U0001'], status: '异常', note: '临时停电' }
 ];
 
 const STORES = [
-  { id: 'ST001', name: '金凤镇门店', lng: 106.312, lat: 29.522, address: '重庆市金凤镇' },
-  { id: 'ST002', name: '科学谷门店', lng: 106.393, lat: 29.537, address: '重庆市科学谷' }
+  { id: 'ST001', name: '金凤镇门店', type: '门店', manager: '陈店长', contactPhone: '18820000001', lng: 106.312, lat: 29.522, address: '重庆市金凤镇', area: '金凤镇', routeId: 'route-005', vehicles: [], status: '空闲', note: '' },
+  { id: 'ST002', name: '科学谷门店', type: '门店', manager: '李店长', contactPhone: '18820000002', lng: 106.393, lat: 29.537, address: '重庆市科学谷', area: '科学谷', routeId: 'route-001', vehicles: ['渝U0002'], status: '拥挤', note: '临时加派人手' }
 ];
 
 const orders = [
@@ -314,6 +314,10 @@ const plannedRoutes = [
   },
 ];
 window.plannedRoutes = plannedRoutes;
+
+// expose warehouses/stores to global scope for pages that expect these variables
+window.WAREHOUSES = WAREHOUSES;
+window.STORES = STORES;
 
 // Try to fetch live vehicles from backend; fallback to static vehiclesData
 async function fetchVehicles() {

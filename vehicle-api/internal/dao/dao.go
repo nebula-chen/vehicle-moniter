@@ -46,7 +46,9 @@ func (d *InfluxDao) BuildPoint(vehicleStatus *types.VEH2CLOUD_STATE) (*write.Poi
 
 	// 注意时区: TimestampGNSS 单位 ms（来自 GNSS），转换为 time.Time
 	timeStamp := time.UnixMilli(int64(vehicleStatus.TimestampGNSS))
+	fmt.Println("timeStamp: ", timeStamp)
 	utcTime := timeStamp.Add(-8 * time.Hour)
+	fmt.Println("utcTime: ", utcTime)
 
 	point := write.NewPoint("vehicle_status", // measurement name 相当于表名
 		map[string]string{ // Tags, 相当于建立索引

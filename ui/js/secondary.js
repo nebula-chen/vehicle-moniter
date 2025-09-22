@@ -430,6 +430,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // 订单页面：渲染当前可用数据（若无数据则会显示空），并在后台等待 orders 数据以应用 URL 的 status 参数
             try { filterOrders(); } catch (e) { console.error('filterOrders failed', e); }
 
+            // 如果页面包含仓库/门店筛选控件，则初始化并渲染仓库/门店列表（兼容 stations-manage.html 可能将 data-page 设为 orders-manage 的情况）
+            try {
+                if (document.getElementById('filter-stationId')) {
+                    // bind form if present
+                    const filterForm = document.getElementById('filterForm');
+                    if (filterForm) filterForm.addEventListener('submit', (e)=>{ e.preventDefault(); filterWarehouse(); });
+                    try { filterWarehouse(); } catch(e) { console.error('filterWarehouse failed', e); }
+                }
+            } catch(e) { /* ignore */ }
+
             // 如果 URL 带有 status 参数，则等待 orders 数据可用后再应用筛选（解决异步加载导致的无结果问题）
             try {
                 const params = new URLSearchParams(window.location.search);
@@ -740,5 +750,69 @@ function normalizeVehicles(src) {
         });
     }
     return [];
+}
+
+// 仓库/门店筛选与渲染（stations-manage.html 使用）
+function filterWarehouse() {
+    const chkWarehouse = document.querySelector('input[type=checkbox][data-type="warehouse"]');
+    const chkStore = document.querySelector('input[type=checkbox][data-type="store"]');
+    const id = (document.getElementById('filter-stationId') && document.getElementById('filter-stationId').value.trim()) || '';
+    const area = (document.getElementById('filter-area') && document.getElementById('filter-area').value.trim()) || '';
+    const status = (document.getElementById('filterStatus') && document.getElementById('filterStatus').value) || '';
+
+    const wantWarehouse = !chkWarehouse || chkWarehouse.checked;
+    const wantStore = !chkStore || chkStore.checked;
+
+    let list = [];
+    if (wantWarehouse && Array.isArray(window.WAREHOUSES)) list = list.concat(window.WAREHOUSES.map(w => Object.assign({type: '仓库'}, w)));
+    if (wantStore && Array.isArray(window.STORES)) list = list.concat(window.STORES.map(s => Object.assign({type: '门店'}, s)));
+
+    const matched = list.filter(item => {
+        if (!item) return false;
+        if (id && !(String(item.id || '').includes(id))) return false;
+        if (area && !(String(item.area || item.name || item.address || '').includes(area))) return false;
+        if (status && status !== '' && String(item.status || '') !== status) return false;
+        return true;
+    });
+
+    renderWarehouseTable(matched);
+}
+
+function renderWarehouseTable(list) {
+    const tbody = document.getElementById('table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!list || list.length === 0) {
+        const tr = document.createElement('tr');
+        tr.className = 'table-empty';
+        tr.innerHTML = '<td colspan="7">暂无匹配记录。</td>';
+        tbody.appendChild(tr);
+        return;
+    }
+
+    list.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.dataset.id = item.id || '';
+        const manager = item.manager || item.contact || '';
+        const contact = item.contactPhone || item.contact || item.phone || '';
+        const route = item.routeId || item.route || '';
+        const vehicles = (Array.isArray(item.vehicles) && item.vehicles.length > 0) ? item.vehicles.map(v => `<a href="car-screen.html?vehicle=${encodeURIComponent(v)}" target="_blank" rel="noopener">${v}</a>`).join('<br>') : (item.vehicles || '--');
+
+        tr.innerHTML = `
+            <td>${item.id || ''}</td>
+            <td>${item.type || ''}</td>
+            <td>${item.status || ''}</td>
+            <td>${manager}</td>
+            <td>${contact}</td>
+            <td>${route ? `<a href="car-screen.html?route=${encodeURIComponent(route)}" class="link-to-map" target="_blank" rel="noopener">${route}</a>` : ''}</td>
+            <td>${vehicles}</td>
+        `;
+
+        tr.addEventListener('click', () => showDetail(item));
+        // prevent row click when clicking map links
+        const links = tr.querySelectorAll('.link-to-map');
+        links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
+        tbody.appendChild(tr);
+    });
 }
 

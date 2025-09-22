@@ -141,6 +141,9 @@ h1 {
     font-size: 1rem;
     background: #fff;
 }
+.filter-bar .filter-checkbox { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; background: #fff; border:1px solid var(--border-color); border-radius:6px; margin-right:8px; cursor:pointer; }
+.filter-bar .filter-checkbox input[type="checkbox"] { width:16px; height:16px; margin:0; accent-color: var(--primary-blue); }
+.filter-bar .filter-checkbox span { font-size:1.4rem; color:var(--gray-dark); }
 .filter-bar button {
     padding: 8px 20px;
     background: #2d5be3;
