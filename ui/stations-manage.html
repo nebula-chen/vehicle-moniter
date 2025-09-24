@@ -2,7 +2,7 @@
 <html lang="zh-cn">
 <head>
     <meta charset="UTF-8">
-    <title>自动驾驶物流大脑 - 快递订单管理</title>
+    <title>自动驾驶物流大脑 - 仓库/门店档案</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- favicon: 在标签页显示 logo -->
     <link rel="icon" href="image/logo.ico" type="image/ico sizes="32x32">
@@ -33,7 +33,7 @@
                 </li>
                 <ul class="sub-list">
                     <li class="sub-item"><a href="stations-manage.html">仓库/门店档案</a></li>
-                    <li class="sub-item">出入库/门店管理</li>
+                    <li class="sub-item"><a href="stations-io.html">出入库/门店管理</a></li>
                 </ul>
 
                 <li class="nav-item" onclick="toggleSub(this)">
@@ -105,10 +105,11 @@
                                 <th>联系方式</th>
                                 <th>所属路线</th>
                                 <th>安排车辆</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
-                            <tr class="table-empty"><td colspan="7">暂无数据，调整筛选或稍后重试。</td></tr>
+                            <tr class="table-empty"><td colspan="8">暂无数据，调整筛选或稍后重试。</td></tr>
                         </tbody>
                     </table>
                 </div>

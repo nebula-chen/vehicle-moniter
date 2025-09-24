@@ -224,7 +224,7 @@ function renderTable(list) {
     if (!list || list.length === 0) {
         const tr = document.createElement('tr');
         tr.className = 'table-empty';
-        tr.innerHTML = '<td colspan="7">暂无匹配记录。</td>';
+        tr.innerHTML = '<td colspan="8">暂无匹配记录。</td>';
         tbody.appendChild(tr);
         return;
     }
@@ -489,6 +489,42 @@ function openStationsAndShowDetail(stationId) {
     } catch (e) { console.warn('openStationsAndShowDetail failed', e); }
 }
 
+// Helper for stations-io page: set station filter, run filterStation and try to activate the created tab
+function openStationsIOAndShowTab(stationId) {
+    try {
+        const container = document.querySelector('.container');
+        const page = container && container.getAttribute('data-page');
+        if (page !== 'stations-io') return;
+
+        const el = document.getElementById('filter-stationId');
+        if (el) el.value = stationId || '';
+        // run filter to create/activate tab
+        try { filterStation(); } catch (e) { /* ignore */ }
+
+        // after rendering, try to ensure the tab/pane is active
+        setTimeout(() => {
+            try {
+                const tabs = document.getElementById('inner-tabs');
+                const content = document.getElementById('tab-content');
+                if (!tabs || !content) return;
+                const rowId = String(stationId || '');
+                // find the inner-tab and activate it
+                const tab = tabs.querySelector(`.inner-tab[data-id="${rowId}"]`);
+                if (tab) {
+                    tab.click();
+                    // scroll pane into view
+                    const pane = content.querySelector(`.tab-pane[data-id="${rowId}"]`);
+                    if (pane) pane.scrollIntoView({behavior:'smooth', block:'start'});
+                } else {
+                    // if no exact data-id match, try to match by label text
+                    const maybe = Array.from(tabs.querySelectorAll('.inner-tab')).find(t => (t.textContent||'').includes(rowId));
+                    if (maybe) maybe.click();
+                }
+            } catch (e) { console.warn('openStationsIOAndShowTab inner failed', e); }
+        }, 120);
+    } catch (e) { console.warn('openStationsIOAndShowTab failed', e); }
+}
+
 // Helper: when navigating to route-manage with route id, apply filter and open detail
 function openRoutesAndShowDetail(routeId) {
     try {
@@ -694,6 +730,29 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
         console.error('page init failed', e);
     }
+});
+
+// Bind stations-io specific form after DOMContentLoaded (if page uses stations-io)
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const container = document.querySelector('.container');
+        const page = container && container.getAttribute('data-page');
+        if (page === 'stations-io') {
+            const filterForm = document.getElementById('filterForm');
+            if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterStation(); });
+            // if URL contains station param, open the corresponding tab in stations-io
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const stationParam = params.get('station');
+                if (stationParam) {
+                    let decoded = null;
+                    try { decoded = decodeURIComponent(stationParam); } catch(e) { decoded = stationParam; }
+                    // use helper to set filter and open the stations-io tab/pane
+                    openStationsIOAndShowTab(decoded);
+                }
+            } catch (e) { /* ignore */ }
+        }
+    } catch (e) { /* ignore */ }
 });
 
 // 渲染车辆表格
@@ -963,6 +1022,7 @@ function renderWarehouseTable(list) {
             <td>${contact}</td>
             <td>${route ? `<a href="route-manage.html?route=${encodeURIComponent(route)}" class="link-to-route" target="_self">${route}</a>` : ''}</td>
             <td>${vehicles}</td>
+            <td><a href="stations-io.html?station=${encodeURIComponent(item.id || '')}" class="link-to-io" target="_self" style="color: cornflowerblue;">出入管理</a></td>
         `;
 
         tr.addEventListener('click', () => showDetail(item));
@@ -971,5 +1031,220 @@ function renderWarehouseTable(list) {
         links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
         tbody.appendChild(tr);
     });
+}
+
+// 页面内子标签页：创建或激活指定站点的 tab
+function createOrActivateTab(item) {
+    if (!item) return null;
+    const tabs = document.getElementById('inner-tabs');
+    const content = document.getElementById('tab-content');
+    if (!tabs || !content) return null;
+
+    const id = String(item.id || item.stationId || item.code || '');
+    if (!id) return null;
+
+    // 如果已有 tab，激活它
+    let existing = tabs.querySelector(`.inner-tab[data-id="${id}"]`);
+    // 取消其它 tab 的 active
+    Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+    Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+
+    if (existing) {
+        existing.classList.add('active');
+        const pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.classList.add('active');
+        return existing;
+    }
+
+    // 创建新 tab
+    const tab = document.createElement('div');
+    tab.className = 'inner-tab active';
+    tab.dataset.id = id;
+    tab.title = item.name || id;
+    tab.innerHTML = `<span class="tab-label">${item.name || id}</span><span class="close-x">&times;</span>`;
+
+    // 关闭按钮
+    tab.querySelector('.close-x').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = tab.dataset.id;
+        const pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.remove();
+        tab.remove();
+        // activate last tab if any
+        const last = tabs.querySelector('.inner-tab');
+        if (last) { last.classList.add('active'); const lastPane = content.querySelector(`.tab-pane[data-id="${last.dataset.id}"]`); if (lastPane) lastPane.classList.add('active'); }
+    });
+
+    tab.addEventListener('click', () => {
+        Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+        let pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.classList.add('active');
+    });
+
+    tabs.appendChild(tab);
+
+    // create content pane
+    const pane = document.createElement('div');
+    pane.className = 'tab-pane active';
+    pane.dataset.id = id;
+    pane.innerHTML = renderTabContent(item);
+    content.appendChild(pane);
+
+    // bind interactions inside the pane
+    // order row click -> showDetail for that order id (lookup in global orders)
+    pane.addEventListener('click', function(e){
+        const tr = e.target.closest && e.target.closest('tr[data-id]');
+        if (!tr) return;
+        const oid = tr.dataset.id;
+        if (!oid) return;
+        const ordersSrc = Array.isArray(window.orders) ? window.orders : (Array.isArray(window.dataOrders) ? window.dataOrders : (Array.isArray(orders) ? orders : []));
+        const found = (ordersSrc || []).find(o => String(o.id) === String(oid));
+        if (found) {
+            showDetail(found);
+        }
+    });
+
+    // open-full link: 跳转到仓库/门店档案页面并传递 station 参数（页面会处理筛选并打开详情）
+    const openFull = pane.querySelector('.open-full');
+    if (openFull) {
+        openFull.addEventListener('click', function(e){
+            e.preventDefault();
+            try {
+                const sid = encodeURIComponent(String(item.id || item.stationId || item.code || ''));
+                if (sid) {
+                    // navigate in same tab so stations-manage can read URL param and open detail
+                    window.location.href = 'stations-manage.html?station=' + sid;
+                }
+            } catch (err) {
+                console.warn('open-full navigation failed', err);
+            }
+        });
+    }
+
+    return tab;
+}
+
+function renderTabContent(item) {
+    const s = item || {};
+    // Build a richer tab pane: header/meta + orders table
+    const escape = (v) => v == null ? '' : String(v);
+    const headerHtml = `
+        <div class="station-header">
+            <div>
+                <div class="station-meta">
+                    <div>编号: ${escape(s.id || '')}</div>
+                    <div>类型: ${escape(s.type || '')}</div>
+                    <div>负责人: ${escape(s.manager || s.contact || '')}</div>
+                    <div>电话: ${escape(s.contactPhone || s.phone || '')}</div>
+                </div>
+            </div>
+            <div style="text-align:right">
+                <div style="color:var(--gray-medium)">地址: ${escape(s.address || '')}</div>
+                <div style="margin-top:6px"><a href="#" class="open-full" data-id="${escape(s.id || '')}">打开完整档案</a></div>
+            </div>
+        </div>
+    `;
+
+    // find related orders from global orders array (data.js)
+    const ordersSrc = Array.isArray(window.orders) ? window.orders : (Array.isArray(window.dataOrders) ? window.dataOrders : (Array.isArray(orders) ? orders : []));
+    const related = (Array.isArray(ordersSrc) ? ordersSrc.filter(o => (o.warehouseId || o.warehouse || '') === (s.id || '') || (o.toWarehouseId || o.toWarehouse || '') === (s.id || '')) : []);
+
+    const renderStatus = (st) => {
+        if (!st) return `<span class="badge status-pending">未知</span>`;
+        if (/(完成|签收|已签收)/.test(st)) return `<span class="badge status-complete">${st}</span>`;
+        if (/(配送中|在途|运输)/.test(st)) return `<span class="badge status-inprogress">${st}</span>`;
+        if (/(待取件|待配送|待取)/.test(st)) return `<span class="badge status-pending">${st}</span>`;
+        return `<span class="badge status-pending">${st}</span>`;
+    };
+
+    let ordersHtml = '';
+    if (!related || related.length === 0) {
+        ordersHtml = '<div class="no-data">暂无出入库订单记录。</div>';
+    } else {
+        ordersHtml = `
+            <table class="orders-table" aria-label="orders">
+                <thead><tr><th>订单号</th><th>状态</th><th>类型</th><th>车辆</th><th>路线</th><th>网格员</th><th>时间</th></tr></thead>
+                <tbody>
+                ${related.map(o => {
+                    const vid = escape(o.vehicleId || o.carId || '');
+                    const route = escape(o.routeId || '');
+                    const gm = escape(o.gridMemberId || o.courierId || '');
+                    const time = escape(o.startTime || o.createdAt || o.start || '');
+                    return `<tr data-id="${escape(o.id)}">
+                        <td>${escape(o.id)}</td>
+                        <td>${renderStatus(escape(o.status))}</td>
+                        <td>${escape(o.type || '')}</td>
+                        <td>${vid ? `<a href="car-screen.html?vehicle=${encodeURIComponent(vid)}" target="_blank" rel="noopener">${vid}</a>` : '--'}</td>
+                        <td>${route ? `<a href="route-manage.html?route=${encodeURIComponent(route)}" target="_self">${route}</a>` : '--'}</td>
+                        <td>${gm || '--'}</td>
+                        <td>${time}</td>
+                    </tr>`;
+                }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    const section = `
+        <div class="orders-section">
+            ${ordersHtml}
+        </div>
+    `;
+
+    return headerHtml + section;
+}
+
+// 在 stations-io 页面使用的筛选函数：查找 WAREHOUSES/STORES 并创建/切换标签页
+function filterStation() {
+    const input = document.getElementById('filter-stationId');
+    if (!input) return;
+    const id = input.value.trim();
+    if (!id) return;
+
+    // search in WAREHOUSES and STORES
+    const warehouses = Array.isArray(window.WAREHOUSES) ? window.WAREHOUSES : [];
+    const stores = Array.isArray(window.STORES) ? window.STORES : [];
+    const all = warehouses.concat(stores);
+    const found = all.find(s => String(s.id || s.code || '').includes(id) || String(s.name || '').includes(id));
+
+    if (found) {
+        const tab = createOrActivateTab(found);
+        // optionally open detail panel if present
+        try { showDetail(found); } catch(e) { /* ignore */ }
+        // ensure pane visible and focus first row
+        try {
+            const content = document.getElementById('tab-content');
+            const pane = content && content.querySelector(`.tab-pane[data-id="${found.id}"]`);
+            if (pane) {
+                pane.scrollIntoView({behavior:'smooth', block:'start'});
+                const firstRow = pane.querySelector('table.orders-table tbody tr[data-id]');
+                if (firstRow) firstRow.focus && firstRow.focus();
+            }
+        } catch (e) { /* ignore */ }
+    } else {
+        // 未找到时，创建一个临时 tab 提示或显示空结果
+        const tabs = document.getElementById('inner-tabs');
+        const content = document.getElementById('tab-content');
+        if (!tabs || !content) return;
+        // remove active states
+        Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+        Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+        // create temp tab
+        const tempId = 'notfound-' + Date.now();
+        const tab = document.createElement('div');
+        tab.className = 'inner-tab active';
+        tab.dataset.id = tempId;
+        tab.innerHTML = `<span class="tab-label">未找到: ${id}</span><span class="close-x">&times;</span>`;
+        tab.querySelector('.close-x').addEventListener('click', (e) => { e.stopPropagation(); tab.remove(); const last = tabs.querySelector('.inner-tab'); if (last) { last.classList.add('active'); const lastPane = content.querySelector(`.tab-pane[data-id="${last.dataset.id}"]`); if (lastPane) lastPane.classList.add('active'); } });
+        tab.addEventListener('click', () => { Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active')); tab.classList.add('active'); Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active')); const pane = content.querySelector(`.tab-pane[data-id="${tempId}"]`); if (pane) pane.classList.add('active'); });
+        tabs.appendChild(tab);
+        const pane = document.createElement('div');
+        pane.className = 'tab-pane active';
+        pane.dataset.id = tempId;
+        pane.innerHTML = `<div class="table-empty">未找到匹配的仓库/门店：${id}</div>`;
+        content.appendChild(pane);
+    }
 }
 
