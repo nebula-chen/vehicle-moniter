@@ -2,7 +2,7 @@
 <html lang="zh-cn">
 <head>
     <meta charset="UTF-8">
-    <title>自动驾驶物流大脑 - 出入库/门店管理</title>
+    <title>自动驾驶物流大脑 - 车路管理调度</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- favicon: 在标签页显示 logo -->
     <link rel="icon" href="image/logo.ico" type="image/ico sizes="32x32">
@@ -13,7 +13,7 @@
     <script src="js/secondary.js"></script>
 </head>
 <body>
-    <div class="container" data-page="stations-io">
+    <div class="container" data-page="route-scheduling">
         <!-- 左侧导航栏 -->
         <aside class="sidebar">
             <h2>自动驾驶物流大脑</h2>
@@ -61,7 +61,7 @@
                 </li>
                 <ul class="sub-list">
                     <li class="sub-item"><a href="route-manage.html">路线信息管理</a></li>
-                    <li class="sub-item">车路管理调度</li>
+                    <li class="sub-item"><a href="route-scheduling.html">车路管理调度</a></li>
                 </ul>
 
                 <li class="nav-item" onclick="toggleSub(this)">
@@ -79,11 +79,11 @@
         </div>
         <div class="main">
             <div class="page-header">
-                <h1 class="page-title">出入库/门店管理</h1>
+                <h1 class="page-title">车路管理调度</h1>
                 <div class="header-right">
                     <!-- 检索筛选区（靠右） -->
                     <form class="filter-bar" id="filterForm" onsubmit="event.preventDefault();filterStation();">
-                        <input type="text" id="filter-stationId" placeholder="仓库/门店编号">
+                        <input type="text" id="filter-stationId" placeholder="路线编号">
                         <button type="submit">查询</button>
                     </form>
                 </div>
@@ -95,13 +95,10 @@
             </div>
 
             <div id="tab-content" class="tab-content">
-                <!-- 动态创建的子标签页内容将插入到这里 -->
-            </div>
-
-            <div class="floating-add" id="btn-add" title="入库">
-                <i class="bi bi-plus"></i>
+                <!-- 动态创建的子标签页内容将由 js/secondary.js 填充 -->
             </div>
         </div>
     </div>
+        
 </body>
 </html>

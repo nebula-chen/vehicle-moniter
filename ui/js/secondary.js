@@ -1248,3 +1248,216 @@ function filterStation() {
     }
 }
 
+// --- route-scheduling 页面初始化与通用交互（flow: tabs, panes, add/close, modify stop, add vehicle）
+(function(){
+    function initRouteScheduling(){
+        const container = document.querySelector('.container');
+        const page = container && container.getAttribute('data-page');
+        if (page !== 'route-scheduling') return;
+
+        const tabsRoot = document.getElementById('inner-tabs');
+        const contentRoot = document.getElementById('tab-content');
+        if (!tabsRoot || !contentRoot) return;
+
+        // build panes from window.plannedRoutes if tab-content is empty
+        if (!contentRoot.querySelector('.tab-pane')){
+            const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : [];
+            // create a friendly short id for display if route ids are long
+            routes.slice(0,6).forEach((r, idx) => {
+                const rid = r.id || ('R' + String(1000 + idx));
+                const pane = document.createElement('div');
+                pane.className = 'tab-pane';
+                pane.dataset.id = rid;
+                pane.innerHTML = buildRoutePaneHtml(rid, r);
+                contentRoot.appendChild(pane);
+            });
+            // if no plannedRoutes, add two sample placeholders
+            if (routes.length === 0) {
+                const sampleIds = ['R0001','R0002'];
+                sampleIds.forEach((rid,i)=>{
+                    const pane = document.createElement('div');
+                    pane.className = 'tab-pane';
+                    if (i===0) pane.classList.add('active');
+                    pane.dataset.id = rid;
+                    pane.innerHTML = buildRoutePaneHtml(rid);
+                    contentRoot.appendChild(pane);
+                });
+            }
+        }
+
+        function ensureTabsFromPanes(){
+            const panes = Array.from(contentRoot.querySelectorAll('.tab-pane'));
+            panes.forEach((p) =>{
+                const id = p.getAttribute('data-id');
+                let t = tabsRoot.querySelector(`.inner-tab[data-id="${id}"]`);
+                if (!t) {
+                    t = document.createElement('div');
+                    t.className = 'inner-tab';
+                    if (p.classList.contains('active')) t.classList.add('active');
+                    t.setAttribute('data-id', id);
+                    t.innerHTML = `<span class="tab-title">${id}线路</span><span class="close-x">×</span>`;
+                    tabsRoot.appendChild(t);
+                }
+            });
+            // add the create button at the end
+            if (!tabsRoot.querySelector('.inner-tab.add-new')){
+                const addBtn = document.createElement('div');
+                addBtn.className = 'inner-tab add-new';
+                addBtn.style.fontWeight = '600';
+                addBtn.style.cursor = 'pointer';
+                addBtn.innerText = '＋ 新增路线';
+                addBtn.addEventListener('click', ()=>{
+                    const newId = 'R' + String(Math.floor(Math.random()*9000)+1000);
+                    const pane = document.createElement('div');
+                    pane.className = 'tab-pane';
+                    pane.setAttribute('data-id', newId);
+                    pane.innerHTML = buildRoutePaneHtml(newId);
+                    contentRoot.appendChild(pane);
+                    refreshTabsAndActivate(newId);
+                });
+                tabsRoot.appendChild(addBtn);
+            }
+        }
+
+        function refreshTabsAndActivate(id){
+            // remove existing add-new to avoid duplicate, then rebuild
+            const add = tabsRoot.querySelector('.inner-tab.add-new');
+            if (add) add.remove();
+            Array.from(tabsRoot.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+            Array.from(contentRoot.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+            // ensure each pane has a tab
+            const panes = Array.from(contentRoot.querySelectorAll('.tab-pane'));
+            panes.forEach(p=>{
+                const pid = p.dataset.id;
+                let t = tabsRoot.querySelector(`.inner-tab[data-id="${pid}"]`);
+                if (!t){
+                    t = document.createElement('div');
+                    t.className = 'inner-tab';
+                    t.dataset.id = pid;
+                    t.innerHTML = `<span class="tab-title">${pid}线路</span><span class="close-x">×</span>`;
+                    tabsRoot.appendChild(t);
+                }
+                // wire click and close
+                if (!t._wired){
+                    t.addEventListener('click', (e)=>{
+                        if (e.target.classList.contains('close-x')) return; // handled separately
+                        activateTab(pid);
+                    });
+                    const cx = t.querySelector('.close-x');
+                    if (cx) cx.addEventListener('click', (ev)=>{
+                        ev.stopPropagation();
+                        const pane = contentRoot.querySelector(`.tab-pane[data-id="${pid}"]`);
+                        if (pane) pane.remove();
+                        t.remove();
+                        // activate first remaining
+                        const first = tabsRoot.querySelector('.inner-tab');
+                        if (first) activateTab(first.getAttribute('data-id'));
+                    });
+                    t._wired = true;
+                }
+            });
+            // re-add create button
+            ensureTabsFromPanes();
+            // activate requested
+            activateTab(id);
+        }
+
+        function activateTab(id){
+            Array.from(tabsRoot.querySelectorAll('.inner-tab')).forEach(t => t.classList.toggle('active', t.getAttribute('data-id')===id));
+            Array.from(contentRoot.querySelectorAll('.tab-pane')).forEach(p => p.classList.toggle('active', p.getAttribute('data-id')===id));
+        }
+
+        function buildRoutePaneHtml(id, route){
+            // try to populate from route if provided
+            const r = route || {};
+            const from = r.from || 'XXX仓库/门店';
+            const to = r.to || 'XXX仓库/门店';
+            const wp = Array.isArray(r.waypoints) ? r.waypoints : [];
+            const wpHtml = wp.slice(1, wp.length-1).map((w,i)=> `<div class="stop-row"><div class="stop-left"><div class="stop-label">途径点</div><div class="stop-name">${w.name|| (w.lng+","+w.lat)}</div></div><div class="stop-meta"><div>预计停留：10m</div><div>预计耗时：0h 42m</div><div>里程：1.02km</div><button class="modify-btn" data-route="${id}" data-stop="wp${i+1}">修改</button></div></div>`).join('');
+            const html = `
+                <div class="route-box">
+                    <div class="stop-row">
+                        <div class="stop-left"><div class="stop-label">起点</div><div class="stop-name">${from}</div></div>
+                        <div class="stop-meta"><div>预计停留：30m</div><div>预计耗时：0h 0m</div><div>里程：0.00km</div><button class="modify-btn" data-route="${id}" data-stop="start">修改</button></div>
+                    </div>
+                    ${wpHtml}
+                    <div class="stop-row">
+                        <div class="stop-left"><div class="stop-label">终点</div><div class="stop-name">${to}</div></div>
+                        <div class="stop-meta"><div>预计停留：20m</div><div>预计耗时：2h 2m</div><div>里程：4.13km</div><button class="modify-btn" data-route="${id}" data-stop="end">修改</button></div>
+                    </div>
+                    <div class="sub-vehicles">
+                        <div>下属车辆 (<span id="veh-count-${id}">${(Array.isArray(r.vehicles) ? r.vehicles.length : 0) || 0}</span>)</div>
+                        <div><button class="add-vehicle" data-route="${id}">＋ 下属车辆</button></div>
+                    </div>
+                </div>
+            `;
+            return html;
+        }
+
+        // initial build
+        ensureTabsFromPanes();
+
+        // delegate clicks on tabsRoot for activate/close
+        tabsRoot.addEventListener('click', (e)=>{
+            const t = e.target.closest('.inner-tab');
+            if (!t) return;
+            const id = t.getAttribute('data-id');
+            if (e.target.classList.contains('close-x')){
+                const pane = contentRoot.querySelector(`.tab-pane[data-id="${id}"]`);
+                if (pane) pane.remove();
+                t.remove();
+                const first = tabsRoot.querySelector('.inner-tab');
+                if (first) activateTab(first.getAttribute('data-id'));
+                return;
+            }
+            if (t.classList.contains('add-new')) return; // ignore add button as it's wired separately
+            activateTab(id);
+        });
+
+        // delegate modify buttons and add-vehicle inside contentRoot
+        contentRoot.addEventListener('click', function(e){
+            const mb = e.target.closest('.modify-btn');
+            if (mb){
+                const rid = mb.getAttribute('data-route');
+                const stopKey = mb.getAttribute('data-stop');
+                if (typeof window.onModifyStop === 'function') window.onModifyStop(rid, stopKey);
+                else alert('修改 ' + rid + ' ' + stopKey);
+                return;
+            }
+            const av = e.target.closest('.add-vehicle');
+            if (av){
+                const rid = av.getAttribute('data-route');
+                if (typeof window.onAddVehicle === 'function') window.onAddVehicle(rid);
+                else {
+                    const span = document.getElementById('veh-count-' + rid);
+                    if (span) span.innerText = String(Number(span.innerText||'0')+1);
+                }
+                return;
+            }
+        });
+
+        // expose simple handlers if not already present
+        if (typeof window.onModifyStop !== 'function'){
+            window.onModifyStop = function(routeId, stopKey){
+                const val = prompt('编辑 ' + routeId + ' 的 ' + stopKey + '，输入新的说明：', '');
+                if (val !== null){
+                    alert('已保存（示例）：' + val);
+                }
+            };
+        }
+        if (typeof window.onAddVehicle !== 'function'){
+            window.onAddVehicle = function(routeId){
+                const span = document.getElementById('veh-count-' + routeId);
+                if (span) span.innerText = String(Number(span.innerText||'0')+1);
+            };
+        }
+
+        // activate first tab
+        const first = tabsRoot.querySelector('.inner-tab');
+        if (first) activateTab(first.getAttribute('data-id'));
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initRouteScheduling);
+    else initRouteScheduling();
+})();
+
