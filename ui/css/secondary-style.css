@@ -9,6 +9,8 @@
     --gray-bg: #f9fafb;
     --white: #ffffff;
     --border-color: #d1d5db;
+    /* 列表和表格统一字号，与筛选框输入一致 */
+    --list-font-size: 1rem;
 }
 
 /* 添加本地字体定义 */
@@ -215,8 +217,8 @@ h1 {
 .panel-body { margin-top:16px; flex:1; display:flex; flex-direction:column; }
 .table-wrap { background:#fff; border:1px solid #e6e9ee; border-radius:14px; padding:14px; flex:1; overflow:auto; }
 #table { width:100%; border-collapse:collapse; min-width:900px; }
-#table thead th { text-align:center; padding:10px 12px; border-bottom:1px solid #eef2f6; color:#334155; font-weight:600; }
-#table tbody td { text-align:center; padding:12px; border-bottom:1px dashed #f1f5f9; color:#374151; font-family: 'Times New Roman', 'YJSZ', Arial, sans-serif; line-height: 1.2; }
+#table thead th { text-align:center; padding:10px 12px; border-bottom:1px solid #eef2f6; color:#334155; font-weight:600; font-size: var(--list-font-size); }
+#table tbody td { text-align:center; padding:12px; border-bottom:1px dashed #f1f5f9; color:#374151; font-family: 'Times New Roman', 'YJSZ', Arial, sans-serif; line-height: 1.2; font-size: var(--list-font-size); }
 .table-empty { text-align:center; color:#6b7280; padding:24px; }
 
 /* 表格行交互 */
@@ -264,7 +266,7 @@ h1 {
     display: flex;
     gap: 8px;
     align-items: flex-start;
-    font-size: 1.4rem; /* 14px */
+    font-size: var(--list-font-size);
     color: var(--gray-dark);
 }
 .info-item .label {
@@ -362,19 +364,19 @@ a:hover, a:focus, a:active { color: inherit; text-decoration: none; outline: non
 /* 子标签页内容样式优化（stations-io） */
 .tab-pane { padding: 12px; box-shadow: none; }
 .tab-pane .station-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
-.tab-pane .station-meta { display:flex; gap:12px; flex-wrap:wrap; color:var(--gray-medium); font-size:1.3rem; }
+.tab-pane .station-meta { display:flex; gap:12px; flex-wrap:wrap; color:var(--gray-medium); font-size:var(--list-font-size); }
 .tab-pane .station-meta div { background:#fff; padding:6px 10px; border-radius:8px; border:1px solid var(--border-color); }
 .tab-pane .orders-section { margin-top:12px; }
 .tab-pane, .tab-pane * { font-family: 'Times New Roman', 'YJSZ', Arial, sans-serif; }
 .orders-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #eef2f6; border-radius:8px; overflow:hidden; }
-.orders-table thead th { text-align:left; padding:8px 10px; background:#f8fafc; border-bottom:1px solid #eef2f6; font-weight:600; font-size:1.3rem; }
-.orders-table tbody td { padding:10px; border-bottom:1px dashed #f1f5f9; font-size:1.3rem; color:var(--gray-dark); }
+.orders-table thead th { text-align:left; padding:8px 10px; background:#f8fafc; border-bottom:1px solid #eef2f6; font-weight:600; font-size:var(--list-font-size); }
+.orders-table tbody td { padding:10px; border-bottom:1px dashed #f1f5f9; font-size:var(--list-font-size); color:var(--gray-dark); }
 .orders-table tbody tr:hover { background: linear-gradient(90deg,#fbfdff,#f6f9ff); cursor:pointer; }
 .badge { display:inline-block; padding:4px 8px; border-radius:8px; font-size:1.1rem; color:#fff; }
 .badge.status-complete { background: #10b981; }
 .badge.status-inprogress { background: #2d5be3; }
 .badge.status-pending { background: #f59e0b; }
-.no-data { padding:12px; color:var(--gray-medium); font-size:1.3rem; }
+.no-data { padding:12px; color:var(--gray-medium); font-size:var(--list-font-size); }
 .open-full { color:var(--dark-blue); font-weight:600; }
 
 @media (max-width:900px) {
@@ -390,15 +392,116 @@ a:hover, a:focus, a:active { color: inherit; text-decoration: none; outline: non
     background: #fff;
     box-shadow: 0 4px 18px rgba(16,24,40,0.03);
 }
-.stop-row { display:flex; align-items:center; justify-content:space-between; padding:8px 6px; border-bottom:1px dashed #f1f5f9; }
-.stop-row:last-child { border-bottom:none; }
-.stop-left { display:flex; gap:12px; align-items:center; min-width:240px; }
-.stop-label { font-weight:700; color:#374151; width:72px; }
-.stop-name { color:#334155; }
-.stop-meta { color:#6b7280; display:flex; gap:16px; align-items:center; }
+.stop-row { border-bottom:1px dashed #f1f5f9; }
+.stop-row.no-data td { text-align:center; padding:12px; color:var(--gray-medium); }
+.stops-table { width:100%; border-collapse:separate; border-spacing:0 8px; margin-bottom:8px; }
+.stops-table thead { display:none; }
+.stops-table tbody tr { background:#fff; border:1px solid #eef2f6; border-radius:8px; }
+.stops-table td { padding:10px 12px; vertical-align:middle; font-size:var(--list-font-size); }
+.stop-label { font-weight:700; color:#374151; width:72px; text-align:left; }
+.stop-name { color:#334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stop-coords { color:var(--gray-medium); margin-left:6px; width:180px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stop-meta { color:#6b7280; display:flex; gap:12px; align-items:center; justify-content:flex-end; }
 .modify-btn { background:#f3f4f6; border:1px solid #e6e9ee; padding:6px 10px; border-radius:8px; cursor:pointer; color:#374151; }
 .route-footer { margin-top:12px; display:flex; align-items:center; justify-content:flex-start; gap:12px; }
 .sub-vehicles { margin-top:18px; border-top:1px solid #eef2f6; padding-top:12px; display:flex; align-items:center; justify-content:space-between; }
 .add-vehicle { display:inline-flex; gap:8px; align-items:center; padding:6px 10px; border-radius:8px; background:#fff; border:1px solid #e6e9ee; cursor:pointer; }
+
+/* route-scheduling: stops layout filling remaining space */
+.route-scheduling-root { display:flex; flex-direction:column; height:100%; }
+.route-scheduling-content { flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+/* stops container occupies 64% of the available height of the content area */
+.stops-container {
+    position: relative;
+    height: 64%;
+    min-height: 220px; /* reasonable minimum */
+    border: 1px solid #eef2f6;
+    border-radius: 12px;
+    padding: 12px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* hide overflow, inner area will scroll */
+}
+
+/* start and end stops fixed to top and bottom of the container */
+.stop-start, .stop-end {
+    flex: 0 0 auto;
+    z-index: 3;
+}
+.stop-start { align-self: stretch; }
+.stop-end { align-self: stretch; margin-top: auto; }
+
+/* middle area holds intermediate stops; it expands to take remaining space */
+.stops-middle {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center; /* center when few items */
+    overflow: hidden;
+}
+
+/* list of intermediate stops: center items, but allow vertical scroll when overflowing */
+.stops-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* when few or no intermediate stops, keep the list area centered and empty space remains */
+.stops-list.empty { justify-content: center; }
+
+/* ensure each stop-row inside list is full-width but visually centered content */
+/* legacy list removed: stops now render as table rows */
+.stops-list { display:none !important; }
+
+/* responsive: on small screens allow name and coords to wrap into two lines */
+@media (max-width:900px) {
+    .stop-left { flex-direction: column; align-items: flex-start; gap:6px; }
+    .stop-label { width: auto; flex:0 0 auto; }
+    .stop-coords { flex:0 0 auto; }
+    .stop-meta { justify-content:flex-start; margin-top:4px; }
+}
+
+/* add-stop row: always visible at the bottom of the middle area (or just above end stop) */
+.add-stop-row {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    padding-top: 8px;
+    padding-bottom: 4px;
+    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,0.9));
+    z-index: 4;
+}
+.add-stop-row .btn-add-stop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    cursor: pointer;
+}
+
+/* ensure add-stop is visible when the list scrolls: make it sticky to the bottom of .stops-middle */
+.stops-middle .add-stop-row { position: sticky; bottom: 6px; }
+
+/* small screens adjustments */
+@media (max-width: 900px) {
+    .stops-container { height: 56%; min-height: 160px; }
+    .stops-list .stop-row { max-width: 100%; }
+}
 
 

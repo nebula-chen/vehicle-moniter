@@ -1001,7 +1001,7 @@ function renderWarehouseTable(list) {
     if (!list || list.length === 0) {
         const tr = document.createElement('tr');
         tr.className = 'table-empty';
-        tr.innerHTML = '<td colspan="7">暂无匹配记录。</td>';
+        tr.innerHTML = '<td colspan="4">暂无匹配记录。</td>';
         tbody.appendChild(tr);
         return;
     }
@@ -1203,6 +1203,21 @@ function filterStation() {
     const id = input.value.trim();
     if (!id) return;
 
+    // If we're on route-scheduling page, allow searching plannedRoutes by route id
+    const container = document.querySelector('.container');
+    const page = container && container.getAttribute('data-page');
+    if (page === 'route-scheduling'){
+        const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : [];
+        // find exact or includes match on route id
+        const foundRoute = routes.find(r => String(r.id || '').toLowerCase() === id.toLowerCase() || String(r.id || '').toLowerCase().includes(id.toLowerCase()));
+        if (foundRoute){
+            // create or activate route tab
+            try { window.createRouteTab(foundRoute); } catch(e) { /* ignore */ }
+            return;
+        }
+        // if no matching route, fallthrough to station lookup and create 'not found' tab below
+    }
+
     // search in WAREHOUSES and STORES
     const warehouses = Array.isArray(window.WAREHOUSES) ? window.WAREHOUSES : [];
     const stores = Array.isArray(window.STORES) ? window.STORES : [];
@@ -1259,31 +1274,8 @@ function filterStation() {
         const contentRoot = document.getElementById('tab-content');
         if (!tabsRoot || !contentRoot) return;
 
-        // build panes from window.plannedRoutes if tab-content is empty
-        if (!contentRoot.querySelector('.tab-pane')){
-            const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : [];
-            // create a friendly short id for display if route ids are long
-            routes.slice(0,6).forEach((r, idx) => {
-                const rid = r.id || ('R' + String(1000 + idx));
-                const pane = document.createElement('div');
-                pane.className = 'tab-pane';
-                pane.dataset.id = rid;
-                pane.innerHTML = buildRoutePaneHtml(rid, r);
-                contentRoot.appendChild(pane);
-            });
-            // if no plannedRoutes, add two sample placeholders
-            if (routes.length === 0) {
-                const sampleIds = ['R0001','R0002'];
-                sampleIds.forEach((rid,i)=>{
-                    const pane = document.createElement('div');
-                    pane.className = 'tab-pane';
-                    if (i===0) pane.classList.add('active');
-                    pane.dataset.id = rid;
-                    pane.innerHTML = buildRoutePaneHtml(rid);
-                    contentRoot.appendChild(pane);
-                });
-            }
-        }
+    // Note: do NOT auto-create panes from window.plannedRoutes by default.
+    // Route panes will be created on demand (for example via filter/search or user action).
 
         function ensureTabsFromPanes(){
             const panes = Array.from(contentRoot.querySelectorAll('.tab-pane'));
@@ -1295,7 +1287,7 @@ function filterStation() {
                     t.className = 'inner-tab';
                     if (p.classList.contains('active')) t.classList.add('active');
                     t.setAttribute('data-id', id);
-                    t.innerHTML = `<span class="tab-title">${id}线路</span><span class="close-x">×</span>`;
+                    t.innerHTML = `<span class="tab-title">${id}</span><span class="close-x">×</span>`;
                     tabsRoot.appendChild(t);
                 }
             });
@@ -1313,6 +1305,7 @@ function filterStation() {
                     pane.setAttribute('data-id', newId);
                     pane.innerHTML = buildRoutePaneHtml(newId);
                     contentRoot.appendChild(pane);
+                    try { applyStopFontSize(pane); } catch(e) {}
                     refreshTabsAndActivate(newId);
                 });
                 tabsRoot.appendChild(addBtn);
@@ -1334,7 +1327,7 @@ function filterStation() {
                     t = document.createElement('div');
                     t.className = 'inner-tab';
                     t.dataset.id = pid;
-                    t.innerHTML = `<span class="tab-title">${pid}线路</span><span class="close-x">×</span>`;
+                    t.innerHTML = `<span class="tab-title">${pid}</span><span class="close-x">×</span>`;
                     tabsRoot.appendChild(t);
                 }
                 // wire click and close
@@ -1362,6 +1355,28 @@ function filterStation() {
             activateTab(id);
         }
 
+        // create or activate a single route tab (route can be an id string or route object)
+        function createRouteTab(route){
+            const rid = (typeof route === 'string') ? route : (route && route.id) || '';
+            if (!rid) return null;
+            // if pane exists, activate it
+            let pane = contentRoot.querySelector(`.tab-pane[data-id="${rid}"]`);
+            if (!pane){
+                pane = document.createElement('div');
+                pane.className = 'tab-pane';
+                pane.dataset.id = rid;
+                pane.innerHTML = buildRoutePaneHtml(rid, (typeof route === 'object' ? route : undefined));
+                contentRoot.appendChild(pane);
+            }
+            // ensure a tab exists and activate
+            refreshTabsAndActivate(rid);
+            // apply font-size from filter inputs to stop-name/stop-coords to match filter box text
+            try { applyStopFontSize(pane); } catch(e) { /* ignore */ }
+            return pane;
+        }
+        // expose globally for quick usage from console/other scripts
+        window.createRouteTab = createRouteTab;
+
         function activateTab(id){
             Array.from(tabsRoot.querySelectorAll('.inner-tab')).forEach(t => t.classList.toggle('active', t.getAttribute('data-id')===id));
             Array.from(contentRoot.querySelectorAll('.tab-pane')).forEach(p => p.classList.toggle('active', p.getAttribute('data-id')===id));
@@ -1373,25 +1388,118 @@ function filterStation() {
             const from = r.from || 'XXX仓库/门店';
             const to = r.to || 'XXX仓库/门店';
             const wp = Array.isArray(r.waypoints) ? r.waypoints : [];
-            const wpHtml = wp.slice(1, wp.length-1).map((w,i)=> `<div class="stop-row"><div class="stop-left"><div class="stop-label">途径点</div><div class="stop-name">${w.name|| (w.lng+","+w.lat)}</div></div><div class="stop-meta"><div>预计停留：10m</div><div>预计耗时：0h 42m</div><div>里程：1.02km</div><button class="modify-btn" data-route="${id}" data-stop="wp${i+1}">修改</button></div></div>`).join('');
+            const midWps = wp.slice(1, wp.length-1);
+            const wpHtml = midWps.map((w,i)=> {
+                const name = w.name || '';
+                const lng = (w.lng != null) ? w.lng : '';
+                const lat = (w.lat != null) ? w.lat : '';
+                const coords = formatCoords(lng, lat);
+                return `<tr class="stop-row" data-stop="wp${i+1}"><td class="stop-label">途径点</td><td class="stop-name">${name}</td><td class="stop-coords">${coords}</td><td class="stop-meta"><div>预计停留：10m</div><div>预计耗时：0h 42m</div><div>里程：1.02km</div><button class="modify-btn" data-route="${id}" data-stop="wp${i+1}">修改</button></td></tr>`;
+            }).join('');
+
             const html = `
-                <div class="route-box">
-                    <div class="stop-row">
-                        <div class="stop-left"><div class="stop-label">起点</div><div class="stop-name">${from}</div></div>
-                        <div class="stop-meta"><div>预计停留：30m</div><div>预计耗时：0h 0m</div><div>里程：0.00km</div><button class="modify-btn" data-route="${id}" data-stop="start">修改</button></div>
-                    </div>
-                    ${wpHtml}
-                    <div class="stop-row">
-                        <div class="stop-left"><div class="stop-label">终点</div><div class="stop-name">${to}</div></div>
-                        <div class="stop-meta"><div>预计停留：20m</div><div>预计耗时：2h 2m</div><div>里程：4.13km</div><button class="modify-btn" data-route="${id}" data-stop="end">修改</button></div>
+                <div class="route-box route-scheduling-root">
+                    <div class="stops-container">
+                        <div class="stop-start">
+                            <table class="stops-table" aria-label="stops-table">
+                                <thead style="display:none"><tr><th>类型</th><th>名称</th><th>坐标</th><th>信息</th></tr></thead>
+                                <tbody>
+                                    <tr class="stop-row" data-stop="start"><td class="stop-label">起点</td><td class="stop-name">${from}</td><td class="stop-coords">${(r.waypoints && r.waypoints[0] ? formatCoords(r.waypoints[0].lng, r.waypoints[0].lat) : '')}</td><td class="stop-meta"><div>预计停留：30m</div><div>预计耗时：0h 0m</div><div>里程：0.00km</div><button class="modify-btn" data-route="${id}" data-stop="start">修改</button></td></tr>
+                                    ${wpHtml || "<tr class='no-mid'><td colspan='4' class='no-data'>暂无途经点</td></tr>"}
+                                    <tr class="stop-row" data-stop="end"><td class="stop-label">终点</td><td class="stop-name">${to}</td><td class="stop-coords">${(r.waypoints && r.waypoints[r.waypoints.length-1] ? formatCoords(r.waypoints[r.waypoints.length-1].lng, r.waypoints[r.waypoints.length-1].lat) : '')}</td><td class="stop-meta"><div>预计停留：20m</div><div>预计耗时：2h 2m</div><div>里程：4.13km</div><button class="modify-btn" data-route="${id}" data-stop="end">修改</button></td></tr>
+                                </tbody>
+                            </table>
+                            <div class="add-stop-row"><button class="btn-add-stop" data-route="${id}">＋ 添加途经点</button></div>
+                        </div>
                     </div>
                     <div class="sub-vehicles">
                         <div>下属车辆 (<span id="veh-count-${id}">${(Array.isArray(r.vehicles) ? r.vehicles.length : 0) || 0}</span>)</div>
-                        <div><button class="add-vehicle" data-route="${id}">＋ 下属车辆</button></div>
+                        <div><button class="add-vehicle" data-route="${id}">添加车辆</button></div>
+                    </div>
+                    <div class="route-vehicles">
+                        <div style="margin-top:12px;">
+                            <table class="orders-table" style="width:100%; font-size:1.3rem;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:18%; text-align:left; padding:8px;">车辆编号</th>
+                                        <th style="width:14%; text-align:left; padding:8px;">车型</th>
+                                        <th style="width:12%; text-align:left; padding:8px;">状态</th>
+                                        <th style="width:12%; text-align:left; padding:8px;">电量</th>
+                                        <th style="width:22%; text-align:left; padding:8px;">位置</th>
+                                        <th style="width:12%; text-align:left; padding:8px;">速度</th>
+                                        <th style="width:10%; text-align:right; padding:8px;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="veh-tbody-${id}">
+                                    ${renderVehiclesForRoute(id, r)}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             `;
             return html;
+        }
+
+        // helper: apply font-size from page filter inputs by setting a CSS variable on the pane root
+        function applyStopFontSize(rootEl){
+            try {
+                const root = (typeof rootEl === 'string') ? document.querySelector(rootEl) : rootEl;
+                if (!root) return;
+                // find a representative filter input on the page to copy font-size from
+                const candidates = ['#filter-routeId', '#filter-point', '#filter-id', '#filter-stationId', '#filter-name'];
+                let fs = null;
+                for (const sel of candidates) {
+                    const el = document.querySelector(sel);
+                    if (el) {
+                        const cs = window.getComputedStyle(el);
+                        if (cs && cs.fontSize) { fs = cs.fontSize; break; }
+                    }
+                }
+                // fallback to body computed size
+                if (!fs) {
+                    const bcs = window.getComputedStyle(document.body);
+                    fs = bcs && bcs.fontSize ? bcs.fontSize : '14px';
+                }
+                // set CSS variable on the root pane so CSS can control sizes
+                try { (root.style || document.documentElement.style).setProperty('--list-font-size', fs); } catch(e) { /* ignore */ }
+            } catch(e) { console.warn('applyStopFontSize failed', e); }
+        }
+
+        // helper: format coordinates to 4 decimal places and prefix with label
+        function formatCoords(lng, lat){
+            try{
+                if (lng == null && lat == null) return '';
+                // if either is null/empty but the other exists, still format
+                var lns = (lng == null || lng === '') ? '' : Number(lng);
+                var lts = (lat == null || lat === '') ? '' : Number(lat);
+                if (lns === '' && lts === '') return '';
+                var fmt = function(n){
+                    if (n === '' || n == null || isNaN(n)) return '';
+                    return (Math.round(n * 10000) / 10000).toFixed(4);
+                };
+                var sl = fmt(lns);
+                var sa = fmt(lts);
+                if (!sl && !sa) return '';
+                return '坐标 : ' + (sl || '') + (sl && sa ? ', ' : '') + (sa || '');
+            }catch(e){ return ''; }
+        }
+
+        function marginRightSafe(el){ try{ el.style.marginRight = '8px'; }catch(e){} }
+
+        // helper: render vehicles rows for a route using window.vehiclesData
+        function renderVehiclesForRoute(routeId, routeObj){
+            try{
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+                const assigned = (routeObj && Array.isArray(routeObj.vehicles)) ? routeObj.vehicles : [];
+                if (!assigned || assigned.length === 0) return '<tr><td colspan="7" class="no-data">暂无车辆</td></tr>';
+                return assigned.map(vId => {
+                    const v = vehicles.find(x => String(x.id||'').toLowerCase() === String(vId||'').toLowerCase()) || { id: vId, type:'—', status:'—', battery:'—', location:'—', speed:'—' };
+                    return `<tr data-veh="${v.id}"><td style="padding:8px;">${v.id}</td><td style="padding:8px;">${v.type||''}</td><td style="padding:8px;">${v.status||''}</td><td style="padding:8px;">${v.battery||''}</td><td style="padding:8px;">${v.location|| (v.lng && v.lat ? (v.lng+','+v.lat) : '')}</td><td style="padding:8px;">${v.speed||''}</td><td style="padding:8px; text-align:right;"><button class="modify-btn" data-route="${routeId}" data-veh="${v.id}">移除</button></td></tr>`;
+                }).join('');
+            }catch(e){
+                return '<tr><td colspan="7" class="no-data">渲染错误</td></tr>';
+            }
         }
 
         // initial build
@@ -1414,7 +1522,7 @@ function filterStation() {
             activateTab(id);
         });
 
-        // delegate modify buttons and add-vehicle inside contentRoot
+        // delegate modify buttons, add-vehicle, and add-stop inside contentRoot
         contentRoot.addEventListener('click', function(e){
             const mb = e.target.closest('.modify-btn');
             if (mb){
@@ -1434,6 +1542,36 @@ function filterStation() {
                 }
                 return;
             }
+
+            // add intermediate stop button handler
+            const ab = e.target.closest('.btn-add-stop');
+            if (ab){
+                const rid = ab.getAttribute('data-route');
+                // find the pane containing this button
+                const pane = e.target.closest('.tab-pane');
+                if (!pane) return;
+                const tbody = pane.querySelector('.stops-table tbody');
+                if (!tbody) return;
+                // compute next index for naming (count existing waypoint rows excluding start/end)
+                const existing = Array.from(tbody.querySelectorAll('tr[data-stop]')).filter(tr => (tr.dataset.stop||'').indexOf('wp')===0).length;
+                const idx = existing + 1;
+                // create new table row
+                const tr = document.createElement('tr');
+                tr.className = 'stop-row';
+                tr.setAttribute('data-stop', 'wp' + idx);
+                tr.innerHTML = `<td class="stop-label">途径点</td><td class="stop-name">新途径点 ${idx}</td><td class="stop-coords"></td><td class="stop-meta"><div>预计停留：10m</div><div>预计耗时：0h 0m</div><div>里程：0.00km</div><button class="modify-btn" data-route="${rid}" data-stop="wp${idx}">修改</button></td>`;
+                // insert before the end row (which has data-stop="end") if present
+                const endRow = tbody.querySelector('tr[data-stop="end"]');
+                if (endRow) tbody.insertBefore(tr, endRow);
+                else tbody.appendChild(tr);
+                // remove the placeholder 'no-mid' row if present
+                const placeholder = tbody.querySelector('tr.no-mid');
+                if (placeholder) placeholder.remove();
+                try { applyStopFontSize(pane); } catch(e) {}
+                // scroll into view
+                try{ tr.scrollIntoView({ behavior:'smooth', block:'center' }); }catch(e){}
+                return;
+            }
         });
 
         // expose simple handlers if not already present
@@ -1447,7 +1585,38 @@ function filterStation() {
         }
         if (typeof window.onAddVehicle !== 'function'){
             window.onAddVehicle = function(routeId){
+                // try to append a new vehicle row into the route's vehicle table
+                const tbody = document.getElementById('veh-tbody-' + routeId);
                 const span = document.getElementById('veh-count-' + routeId);
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+                // create a synthetic id for demo if no actual vehicle available
+                const newId = 'NEW' + String(Math.floor(Math.random()*9000)+1000);
+                // choose first unassigned vehicle from window.vehiclesData not already in the table
+                let chosen = null;
+                for (const v of vehicles){
+                    const exists = tbody && tbody.querySelector(`tr[data-veh="${v.id}"]`);
+                    if (!exists){ chosen = v; break; }
+                }
+                const veh = chosen || { id: newId, type:'未知', status:'空闲', battery:'—', location:'—', speed:'—' };
+                if (tbody){
+                    const tr = document.createElement('tr');
+                    tr.setAttribute('data-veh', veh.id);
+                    tr.innerHTML = `<td style="padding:8px;">${veh.id}</td><td style="padding:8px;">${veh.type||''}</td><td style="padding:8px;">${veh.status||''}</td><td style="padding:8px;">${veh.battery||''}</td><td style="padding:8px;">${veh.location|| (veh.lng && veh.lat ? (veh.lng+','+veh.lat) : '')}</td><td style="padding:8px;">${veh.speed||''}</td><td style="padding:8px; text-align:right;"><button class="modify-btn" data-route="${routeId}" data-veh="${veh.id}">移除</button></td>`;
+                    tbody.appendChild(tr);
+                    // update count if present
+                    if (span) span.innerText = String(Number(span.innerText||'0')+1);
+                    // bind remove handler for this row
+                    const btn = tr.querySelector('button.modify-btn');
+                    if (btn){
+                        btn.addEventListener('click', (e)=>{
+                            e.stopPropagation();
+                            tr.remove();
+                            if (span) span.innerText = String(Math.max(0, Number(span.innerText||'0')-1));
+                        });
+                    }
+                    return;
+                }
+                // fallback: just increment the counter if table missing
                 if (span) span.innerText = String(Number(span.innerText||'0')+1);
             };
         }
