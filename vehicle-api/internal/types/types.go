@@ -3,6 +3,8 @@
 
 package types
 
+import "time"
+
 type AnalyticsOverviewResp struct {
 	OrderCount        TimeSeries              `json:"orderCount"`
 	OrderAmount       TimeSeries              `json:"orderAmount"`
@@ -72,13 +74,53 @@ type TimeSeries struct {
 }
 
 type TrajectoryReq struct {
-	VehicleId string `json:"vehicleId"` // required
-	StartUtc  string `json:"startUtc"`  // RFC3339 UTC timestamp, e.g. 2006-01-02T15:04:05Z
-	EndUtc    string `json:"endUtc"`    // RFC3339 UTC timestamp
+	VehicleId string `json:"vehicleId"` // 必填
+	StartUtc  string `json:"startUtc"`  // RFC3339 UTC 时间戳，例如 2006-01-02T15:04:05Z
+	EndUtc    string `json:"endUtc"`    // RFC3339 UTC 时间戳
 }
 
 type TrajectoryResp struct {
 	Trajectory []PositionPoint `json:"trajectory"`
+}
+
+// 车辆相关 API 类型
+type VehicleInfo struct {
+	Id        string `json:"id"`
+	Type      string `json:"type"`
+	Capacity  string `json:"capacity"`
+	Battery   string `json:"battery"`
+	Speed     string `json:"speed"`
+	Lng       int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
+	Lat       int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
+	Status    string `json:"status"`
+	Route     string `json:"route"`
+	UpdatedAt string `json:"updatedAt"` // RFC3339 UTC 时间
+}
+
+type VehicleListResp struct {
+	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+type VehicleSummaryResp struct {
+	Total    int `json:"total"`
+	InTransit int `json:"inTransit"`
+	Idle     int `json:"idle"`
+	Charging int `json:"charging"`
+	Abnormal int `json:"abnormal"`
+}
+
+// TaskRecord 表示一次车辆任务（从起点到终点）的记录，持久化到关系型数据库以便留痕
+type TaskRecord struct {
+	ID        int64     `json:"id" db:"id"`
+	VehicleId string    `json:"vehicleId" db:"vehicle_id"`
+	StartTime time.Time `json:"startTime" db:"start_time"`
+	EndTime   time.Time `json:"endTime" db:"end_time"`
+	StartLon  uint32    `json:"startLon" db:"start_lon"`
+	StartLat  uint32    `json:"startLat" db:"start_lat"`
+	EndLon    uint32    `json:"endLon" db:"end_lon"`
+	EndLat    uint32    `json:"endLat" db:"end_lat"`
+	Status    string    `json:"status" db:"status"` // e.g. completed/aborted
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
 
 type VEH2CLOUD_STATE struct {

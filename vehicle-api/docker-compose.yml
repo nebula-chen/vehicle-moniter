@@ -15,6 +15,23 @@ services:
       - my-network
     restart: always
 
+  # 内部 MySQL 服务，用于持久化 vehicle-api 的数据
+  # 注意：不在宿主机暴露 3306 端口，避免与其他服务端口冲突，容器间通过 Docker 网络访问
+  mysql:
+    image: mysql:8.0
+    container_name: vehicle-api-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: vehicle
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: 12345678
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mysql_data:/var/lib/mysql  # 本地目录持久化 MySQL 数据
+    networks:
+      - my-network
+
 networks:
   my-network:
     external: true  # 声明使用外部网络

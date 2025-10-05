@@ -83,9 +83,9 @@ func (d *InfluxDao) Close() {
 	d.InfluxWriter.Close()
 }
 
-// QueryPositions returns ordered position points for a vehicle between start and end (inclusive)
+// QueryPositions 返回指定时间范围内（包含端点）某车辆的有序位置点
 func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.Time) ([]types.PositionPoint, error) {
-	// Build Flux query: filter by measurement and vehicleId, pivot fields to get longitude/latitude per timestamp
+	// 构建 Flux 查询：按 measurement 与 vehicleId 过滤，并 pivot 字段以按时间取出经纬度
 	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn: (r) => r._measurement == "vehicle_status" and r["vehicleId"] == "%s") |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value") |> keep(columns:["_time","longitude","latitude"]) |> sort(columns:["_time"])`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), vehicleId)
 
 	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
@@ -97,7 +97,7 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 	pts := make([]types.PositionPoint, 0)
 	for result.Next() {
 		rec := result.Record()
-		// values may be float64 or int64 depending on write
+		// 值可能是 float64 或 int64，取决于写入类型
 		var lon uint32
 		var lat uint32
 		if v := rec.ValueByKey("longitude"); v != nil {
@@ -124,7 +124,7 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 				lat = 0
 			}
 		}
-		// use UTC RFC3339 timestamp string for responses
+		// 使用 UTC RFC3339 格式的时间字符串作为响应时间
 		t := rec.Time().UTC()
 		ts := t.Format(time.RFC3339)
 		pts = append(pts, types.PositionPoint{Timestamp: ts, Longitude: lon, Latitude: lat})
@@ -133,4 +133,102 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 		return nil, result.Err()
 	}
 	return pts, nil
+}
+
+// QueryLatestStatus 返回单个 vehicleId 的最新 VEH2CLOUD_STATE
+func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, error) {
+	var out types.VEH2CLOUD_STATE
+	// 使用 Flux 获取 vehicle_status measurement 的最后一条记录并 pivot 字段
+	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: -30d) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r["vehicleId"]=="%s") |> last() |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")`, d.Bucket, vehicleId)
+	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
+	result, err := queryAPI.Query(context.Background(), flux)
+	if err != nil {
+		return out, err
+	}
+	if result.Next() {
+		rec := result.Record()
+		// fill minimal fields; many fields are numeric and may come as float64/int64
+		if v := rec.ValueByKey("velocity"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Velocity = uint16(t)
+			case float64:
+				out.Velocity = uint16(t)
+			}
+		}
+		if v := rec.ValueByKey("longitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Position.Longitude = uint32(t)
+			case float64:
+				out.Position.Longitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("latitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Position.Latitude = uint32(t)
+			case float64:
+				out.Position.Latitude = uint32(t)
+			}
+		}
+		out.VehicleId = vehicleId
+		out.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		return out, nil
+	}
+	if result.Err() != nil {
+		return out, result.Err()
+	}
+	return out, fmt.Errorf("no data for vehicle %s", vehicleId)
+}
+
+// QueryAllVehiclesLatest 返回所有车辆的最新状态（受最近时间窗口限制）
+func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VEH2CLOUD_STATE, error) {
+	// 该 Flux 按 vehicleId 分组并取最后一条记录
+	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: -30d) |> filter(fn:(r)=> r._measurement=="vehicle_status") |> group(columns:["vehicleId"]) |> last() |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")`, d.Bucket)
+	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
+	result, err := queryAPI.Query(context.Background(), flux)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]types.VEH2CLOUD_STATE, 0)
+	for result.Next() {
+		rec := result.Record()
+		var s types.VEH2CLOUD_STATE
+		if v := rec.ValueByKey("vehicleId"); v != nil {
+			if vs, ok := v.(string); ok {
+				s.VehicleId = vs
+			}
+		}
+		if v := rec.ValueByKey("velocity"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Velocity = uint16(t)
+			case float64:
+				s.Velocity = uint16(t)
+			}
+		}
+		if v := rec.ValueByKey("longitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Longitude = uint32(t)
+			case float64:
+				s.Position.Longitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("latitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Latitude = uint32(t)
+			case float64:
+				s.Position.Latitude = uint32(t)
+			}
+		}
+		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		out = append(out, s)
+	}
+	if result.Err() != nil {
+		return nil, result.Err()
+	}
+	return out, nil
 }

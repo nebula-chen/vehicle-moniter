@@ -1,3 +1,4 @@
 /influxDB/influxdb2
 /vehicle-api/log
+/vehicle-api/mysql_data
 /vehicle-client

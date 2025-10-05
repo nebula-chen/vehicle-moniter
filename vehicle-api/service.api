@@ -53,19 +53,45 @@ type OnlineCountResp {
 }
 
 type TrajectoryReq {
-	VehicleId string `json:"vehicleId"` // required
-	StartUtc  string `json:"startUtc"` // RFC3339 UTC timestamp, e.g. 2006-01-02T15:04:05Z
-	EndUtc    string `json:"endUtc"` // RFC3339 UTC timestamp
+	VehicleId string `json:"vehicleId"` // 必填
+	StartUtc  string `json:"startUtc"` // RFC3339 UTC 时间戳, e.g. 2006-01-02T15:04:05Z
+	EndUtc    string `json:"endUtc"` // RFC3339 UTC 时间戳
 }
 
 type PositionPoint {
-	Timestamp string `json:"timestamp"` // RFC3339 UTC timestamp
+	Timestamp string `json:"timestamp"` // RFC3339 UTC 时间戳
 	Longitude uint32 `json:"longitude"`
 	Latitude  uint32 `json:"latitude"`
 }
 
 type TrajectoryResp {
 	Trajectory []PositionPoint `json:"trajectory"`
+}
+
+// 车辆相关 API 类型
+type VehicleInfo {
+	Id        string `json:"id"`
+	Type      string `json:"type"`
+	Capacity  string `json:"capacity"`
+	Battery   string `json:"battery"`
+	Speed     string `json:"speed"`
+	Lng       int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
+	Lat       int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
+	Status    string `json:"status"`
+	Route     string `json:"route"`
+	UpdatedAt string `json:"updatedAt"` // RFC3339 UTC 时间
+}
+
+type VehicleListResp {
+	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+type VehicleSummaryResp {
+	Total    int `json:"total"`
+	InTransit int `json:"inTransit"`
+	Idle     int `json:"idle"`
+	Charging int `json:"charging"`
+	Abnormal int `json:"abnormal"`
 }
 
 // Analytics 统计 API 定义

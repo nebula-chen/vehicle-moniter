@@ -15,3 +15,10 @@ InfluxDBConfig:
   Timeout: 5s
   BatchSize: 100
   FlushInterval: 5
+MySQL:
+  host: "mysql"        # 在 docker-compose 中定义的服务名
+  port: "3306"
+  user: "admin"
+  password: "12345678"
+  database: "vehicle"
+  charset: "utf8mb4"

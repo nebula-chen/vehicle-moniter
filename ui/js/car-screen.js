@@ -106,9 +106,6 @@
                 if (attempts >= maxAttempts) { clearInterval(tid); console.warn('focusVehicleById: vehicle markers not ready'); }
             }, 300);
         })();
-        // initialize trip chart and show default or mock data
-        initTripChart();
-        updateTripChartForRoute(null, null);
         window.addEventListener('resize', onResize);
         // 点击页面空白处取消高亮（点击 route-item 会 stopPropagation）
         document.addEventListener('click', () => {
@@ -295,12 +292,6 @@
         return [];
     }
 
-    function getJdPoints(){
-        if (typeof jdPoints !== 'undefined') return jdPoints;
-        if (typeof window !== 'undefined' && window.jdPoints) return window.jdPoints;
-        return null;
-    }
-
     // 计算每辆车对应的包裹件数（扫描全局 orders 列表）
     function computePackageCountsByVehicle(){
         const map = {};
@@ -317,110 +308,6 @@
         return map;
     }
 
-    function highlightRoute(routeId){
-        highlightedRouteId = routeId;
-        focusRoute(routeId);
-        updateRouteListSelection();
-        // update trip chart for selected route
-        updateTripChartForRoute(routeId, null);
-    }
-
-    // --- Trip detail chart (速度 / 距离 / 耗电) ---
-    function initTripChart(){
-        const el = document.getElementById('prototypeChart');
-        if (!el || !window.echarts) return null;
-        charts.trip = echarts.init(el);
-        const opt = {
-            tooltip: { trigger: 'axis' },
-            legend: { data: ['速度(km/h)','累计距离(km)','耗电(%)'], textStyle:{ color: '#cfeff5' } },
-            grid: { left: 12, right: 12, top: 30, bottom: 10, containLabel: true },
-            xAxis: { type: 'category', data: [], axisLine:{ lineStyle:{ color:'rgba(255,255,255,0.12)'} }, axisLabel:{ color:'#dfeffb' }, splitLine: { show: true, interval: 0, lineStyle: { color: 'rgba(53,170,174,1)', type: 'solid', width: 1.5 } } },
-            yAxis: [
-                { type: 'value', position:'left', axisLine:{ show:false }, axisLabel:{ show:false }, axisTick:{ show:false }, splitNumber: 10, splitLine:{ lineStyle:{ color:'rgba(53,170,174,1)', type: 'solid', width: 1.5 } } },
-                { type: 'value', position:'right', offset: 0, axisLine:{ show:false }, axisLabel:{ show:false }, axisTick:{ show:false }, splitLine:{ show:false } },
-                { type: 'value', position:'right', offset: 48, axisLine:{ show:false }, axisLabel:{ show:false }, axisTick:{ show:false }, splitLine:{ show:false } }
-            ],
-            series: [
-                { name: '速度(km/h)', type: 'line', smooth: true, data: [], yAxisIndex: 0, itemStyle:{ color:'#60a5fa' } },
-                { name: '累计距离(km)', type: 'line', smooth: true, data: [], yAxisIndex: 1, itemStyle:{ color:'#f59e42' } },
-                { name: '耗电(%)', type: 'line', smooth: true, data: [], yAxisIndex: 2, itemStyle:{ color:'#9ef27e' } }
-            ],
-            graphic: [
-                // outer border around full chart container
-                {
-                    type: 'rect',
-                    left: 0,
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    shape: null,
-                    style: {
-                        stroke: 'rgba(53,170,174,1)',
-                        fill: 'transparent',
-                        lineWidth: 2
-                    }
-                },
-                // border around grid area to match grid edges
-                {
-                    type: 'rect',
-                    left: 8,
-                    top: 30,
-                    right: 10,
-                    bottom: 12,
-                    style: {
-                        stroke: 'rgba(53,170,174,1)',
-                        fill: 'transparent',
-                        lineWidth: 2
-                    }
-                }
-            ],
-            textStyle: { color: '#ffffff' }
-        };
-        charts.trip.setOption(opt);
-        return charts.trip;
-    }
-
-    // Generate fallback/mock trip data for a routeId (if real trip logs aren't provided)
-    function generateMockTripData(routeId){
-        // create 12 sample points (每 5 分钟) — 速度、累计距离、耗电
-        const points = 12;
-        const labels = [];
-        const speeds = [];
-        const dists = [];
-        const soc = [];
-        let cum = 0;
-        let remaining = 100 - (Math.abs(hashCode(routeId)) % 30); // seed soc start
-        for (let i=0;i<points;i++){
-            labels.push((i*5) + 'm');
-            const sp = Math.max(5, Math.round( (Math.sin(i/2)+1.5) * (30 + (i%3)*5) ));
-            cum += +(sp/60*5).toFixed(2); // approximate km per 5 minutes
-            speeds.push(sp);
-            dists.push(+cum.toFixed(2));
-            remaining = Math.max(10, remaining - (0.5 + Math.random()*1.5));
-            soc.push(+remaining.toFixed(1));
-        }
-        return { labels, speeds, dists, soc };
-    }
-
-    function hashCode(str){
-        let h = 0; for (let i=0;i<str.length;i++){ h = (h<<5)-h + str.charCodeAt(i); h|=0; } return h;
-    }
-
-    // Update trip chart with given dataset
-    function updateTripChartForRoute(routeId, data){
-        const chart = charts.trip || initTripChart();
-        if (!chart) return;
-        const d = data || generateMockTripData(routeId || 'default');
-        chart.setOption({
-            xAxis: { data: d.labels },
-            series: [
-                { name: '速度(km/h)', data: d.speeds },
-                { name: '累计距离(km)', data: d.dists },
-                { name: '耗电(%)', data: d.soc }
-            ]
-        });
-    }
-
     function clearHighlight(){
         highlightedRouteId = null;
         // 仅恢复线宽到默认（4），不改变线路颜色（保留按类型设置的颜色）
@@ -431,7 +318,6 @@
             });
         } catch(e){ /* ignore */ }
         // 清空或恢复 trip chart
-        updateTripChartForRoute(null, null);
     }
 
     function initMap(){
@@ -745,16 +631,6 @@
                 console.warn('AMap not available after retries; map initialization skipped');
             }
         }, interval);
-    }
-
-    // 通用小型柱状图配置
-    function smallBarOption(color, unit){
-        return {
-            grid: { left: 6, right: 6, top: 8, bottom: 0, containLabel: true },
-            xAxis: { type: 'category', data: ['一','二','三','四','五','六','日'], axisTick:{show:false}, axisLine:{lineStyle:{color:'#e6e8ec'}}, axisLabel:{color:'#64748b'} },
-            yAxis: { type: 'value', axisLine:{show:false}, splitLine:{ lineStyle:{ color:'rgba(200,210,220,0.12)' } }, axisLabel:{ color:'#94a3b8' } },
-            series: [{ type:'bar', data: [12,18,9,20,16,22,15], barWidth:'56%', itemStyle:{ color, borderRadius:[6,6,0,0] }, label:{ show:true, position:'top', color:'#111827', fontWeight:600, formatter:v=>`${v.data}${unit||''}` } }]
-        };
     }
 
     function renderCharts(){

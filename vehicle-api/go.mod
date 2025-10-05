@@ -5,12 +5,14 @@ go 1.21
 toolchain go1.22.3
 
 require (
+	github.com/go-sql-driver/mysql v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/zeromicro/go-zero v1.9.0
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
