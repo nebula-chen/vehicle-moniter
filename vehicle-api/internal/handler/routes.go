@@ -49,10 +49,31 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Path:    "/api/vehicles/list",
 				Handler: HandleVehiclesListHandler(serverCtx),
 			},
+			// 车辆静态信息 CRUD
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicles/",
-				Handler: HandleVehicleDetailHandler(serverCtx),
+				Path:    "/api/vehicles",
+				Handler: HandleListVehiclesHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPost,
+				Path:    "/api/vehicles",
+				Handler: HandleCreateVehicleHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/vehicles/detail",
+				Handler: HandleGetVehicleHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPut,
+				Path:    "/api/vehicles",
+				Handler: HandleUpdateVehicleHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodDelete,
+				Path:    "/api/vehicles",
+				Handler: HandleDeleteVehicleHandler(serverCtx),
 			},
 			{
 				Method:  http.MethodGet,

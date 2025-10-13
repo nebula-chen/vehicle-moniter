@@ -32,16 +32,16 @@ func (l *HandleVehiclesListLogic) HandleVehiclesList() (*types.VehicleListResp, 
 	resp := &types.VehicleListResp{Vehicles: make([]types.VehicleInfo, 0, len(states))}
 	for _, s := range states {
 		vi := types.VehicleInfo{
-			Id:        s.VehicleId,
-			Type:      "unknown",
-			Capacity:  "-",
-			Battery:   "-",
-			Speed:     "-",
-			Lng:       int64(s.Position.Longitude),
-			Lat:       int64(s.Position.Latitude),
-			Status:    "unknown",
-			Route:     "-",
-			UpdatedAt: "",
+			Id:            s.VehicleId,
+			Type:          "unknown",
+			TotalCapacity: "-",
+			Battery:       "-",
+			Speed:         "-",
+			Lng:           int64(s.Position.Longitude),
+			Lat:           int64(s.Position.Latitude),
+			Status:        "unknown",
+			Route:         "-",
+			UpdatedAt:     "",
 		}
 		// derive status
 		if s.Velocity > 0 || s.VelocityGNSS > 0 {

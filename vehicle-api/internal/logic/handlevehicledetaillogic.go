@@ -31,16 +31,16 @@ func (l *HandleVehicleDetailLogic) HandleVehicleDetail(vehicleId string) (*types
 		return nil, err
 	}
 	vi := &types.VehicleInfo{
-		Id:        s.VehicleId,
-		Type:      "unknown",
-		Capacity:  "-",
-		Battery:   "-",
-		Speed:     "-",
-		Lng:       int64(s.Position.Longitude),
-		Lat:       int64(s.Position.Latitude),
-		Status:    "unknown",
-		Route:     "-",
-		UpdatedAt: time.UnixMilli(int64(s.TimestampGNSS)).UTC().Format(time.RFC3339),
+		Id:            s.VehicleId,
+		Type:          "unknown",
+		TotalCapacity: "-",
+		Battery:       "-",
+		Speed:         "-",
+		Lng:           int64(s.Position.Longitude),
+		Lat:           int64(s.Position.Latitude),
+		Status:        "unknown",
+		Route:         "-",
+		UpdatedAt:     time.UnixMilli(int64(s.TimestampGNSS)).UTC().Format(time.RFC3339),
 	}
 	if s.Velocity > 0 || s.VelocityGNSS > 0 {
 		vi.Status = "in_transit"

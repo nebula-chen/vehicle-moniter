@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -44,20 +45,31 @@ func (d *InfluxDao) AddPoint(point *write.Point) error {
 
 func (d *InfluxDao) BuildPoint(vehicleStatus *types.VEH2CLOUD_STATE) (*write.Point, error) {
 
-	// 注意时区: TimestampGNSS 单位 ms（来自 GNSS），转换为 time.Time
-	timeStamp := time.UnixMilli(int64(vehicleStatus.TimestampGNSS))
-	fmt.Println("timeStamp: ", timeStamp)
-	utcTime := timeStamp.Add(-8 * time.Hour)
-	fmt.Println("utcTime: ", utcTime)
+	// GNSS 时间为毫秒时间戳（UTC 毫秒），直接转换为 time.Time 后使用 UTC()
+	// 不要手动减 8 小时，这会导致带有 +08 时区标识但实际上时间已经调整，从而写入错误的时间点
+	timeStamp := time.UnixMilli(int64(vehicleStatus.TimestampGNSS)).UTC()
+
+	// 把途经点序列化为 JSON 字符串写入 passPoints 字段（Influx 字段只支持标量类型）
+	var passPointsJSON string
+	if len(vehicleStatus.PassPoints) > 0 {
+		if b, err := json.Marshal(vehicleStatus.PassPoints); err == nil {
+			passPointsJSON = string(b)
+		}
+	}
 
 	point := write.NewPoint("vehicle_status", // measurement name 相当于表名
 		map[string]string{ // Tags, 相当于建立索引
 			"vehicleId": vehicleStatus.VehicleId,
 			"messageId": string(vehicleStatus.MessageId),
 		}, map[string]interface{}{ // Fields, 相当于表的字段
-			"driveMode":       vehicleStatus.DriveMode,
-			"velocity":        vehicleStatus.Velocity,
+			"timestampGNSS":   vehicleStatus.TimestampGNSS,
 			"velocityGNSS":    vehicleStatus.VelocityGNSS,
+			"longitude":       vehicleStatus.Position.Longitude,
+			"latitude":        vehicleStatus.Position.Latitude,
+			"heading":         vehicleStatus.Heading,
+			"tapPos":          vehicleStatus.TapPos,
+			"steeringAngle":   vehicleStatus.SteeringAngle,
+			"velocity":        vehicleStatus.Velocity,
 			"accelerationLon": vehicleStatus.AccelerationLon,
 			"accelerationLat": vehicleStatus.AccelerationLat,
 			"accelerationVer": vehicleStatus.AccelerationVer,
@@ -69,11 +81,12 @@ func (d *InfluxDao) BuildPoint(vehicleStatus *types.VEH2CLOUD_STATE) (*write.Poi
 			"brakePos":        vehicleStatus.BrakePos,
 			"brakePressure":   vehicleStatus.BrakePressure,
 			"fuelConsumption": vehicleStatus.FuelConsumption,
-			"heading":         vehicleStatus.Heading,
-			"longitude":       vehicleStatus.Position.Longitude,
-			"latitude":        vehicleStatus.Position.Latitude,
-			"timestampGNSS":   vehicleStatus.TimestampGNSS,
-		}, utcTime)
+			"driveMode":       vehicleStatus.DriveMode,
+			"destLon":         vehicleStatus.DestLocation.Longitude,
+			"destLat":         vehicleStatus.DestLocation.Latitude,
+			"passPointsNum":   vehicleStatus.PassPointsNum,
+			"passPoints":      passPointsJSON,
+		}, timeStamp)
 
 	return point, nil
 }
@@ -174,6 +187,15 @@ func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, 
 		}
 		out.VehicleId = vehicleId
 		out.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		// 解析 passPoints 字段（途经点 JSON）
+		if v := rec.ValueByKey("passPoints"); v != nil {
+			if sstr, ok := v.(string); ok && sstr != "" {
+				var pts []types.Position2D
+				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
+					out.PassPoints = pts
+				}
+			}
+		}
 		return out, nil
 	}
 	if result.Err() != nil {
@@ -225,10 +247,169 @@ func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VEH2CLOUD_STATE, error) {
 			}
 		}
 		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		// 解析 passPoints 字段（途经点 JSON）
+		if v := rec.ValueByKey("passPoints"); v != nil {
+			if sstr, ok := v.(string); ok && sstr != "" {
+				var pts []types.Position2D
+				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
+					s.PassPoints = pts
+				}
+			}
+		}
 		out = append(out, s)
 	}
 	if result.Err() != nil {
 		return nil, result.Err()
 	}
+	return out, nil
+}
+
+// QueryVehiclesLatestInRange 返回在指定时间区间内每辆车的最新状态
+func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VEH2CLOUD_STATE, error) {
+	// 为避免 pivot 时因不同写入者导致同一字段出现不同类型（string vs unsigned）而报错，
+	// 我们分两次查询：
+	// 1) 查询数值字段并 pivot（longitude/latitude/velocity 等），以获得每车的数值列
+	// 2) 单独查询字符串字段（例如 passPoints），取最后一条
+	// 最后把两个结果按 vehicleId 合并返回
+
+	// 数值字段集合（按需添加）
+	numericFields := []string{"timestampGNSS", "velocity", "longitude", "latitude", "heading", "tapPos", "steeringAngle", "accelerationLon", "accelerationLat", "accelerationVer", "yawRate", "accelPos", "engineSpeed", "engineTorque", "brakeFlag", "brakePos", "brakePressure", "fuelConsumption", "driveMode", "destLon", "destLat", "passPointsNum"}
+	// 构造 numeric filter 子表达式
+	nf := ""
+	for i, f := range numericFields {
+		if i == 0 {
+			nf = fmt.Sprintf(`r._field == "%s"`, f)
+		} else {
+			nf = nf + " or " + fmt.Sprintf(`r._field == "%s"`, f)
+		}
+	}
+
+	numericFlux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn:(r)=> r._measurement=="vehicle_status" and (%s)) |> group(columns:["vehicleId"]) |> last() |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), nf)
+
+	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
+	result, err := queryAPI.Query(context.Background(), numericFlux)
+	if err != nil {
+		return nil, err
+	}
+
+	// 临时 map 用于合并结果，key 为 vehicleId
+	tmp := make(map[string]types.VEH2CLOUD_STATE)
+
+	for result.Next() {
+		rec := result.Record()
+		var s types.VEH2CLOUD_STATE
+		// vehicleId 为 tag，在 pivot 后仍可通过 ValueByKey 获取
+		if v := rec.ValueByKey("vehicleId"); v != nil {
+			if vs, ok := v.(string); ok {
+				s.VehicleId = vs
+			}
+		}
+		if v := rec.ValueByKey("velocity"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Velocity = uint16(t)
+			case float64:
+				s.Velocity = uint16(t)
+			}
+		}
+		if v := rec.ValueByKey("longitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Longitude = uint32(t)
+			case float64:
+				s.Position.Longitude = uint32(t)
+			case uint64:
+				s.Position.Longitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("latitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Latitude = uint32(t)
+			case float64:
+				s.Position.Latitude = uint32(t)
+			case uint64:
+				s.Position.Latitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("heading"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Heading = uint32(t)
+			case float64:
+				s.Heading = uint32(t)
+			}
+		}
+		// 使用记录时间作为 TimestampGNSS
+		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+
+		// 保存到临时 map（按 vehicleId 覆盖）
+		if s.VehicleId != "" {
+			tmp[s.VehicleId] = s
+		}
+	}
+	if result.Err() != nil {
+		return nil, result.Err()
+	}
+
+	// 查询字符串字段 passPoints（单独查询以避免类型冲突）
+	passFlux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r._field=="passPoints") |> group(columns:["vehicleId"]) |> last()`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339))
+	passResult, err := queryAPI.Query(context.Background(), passFlux)
+	if err != nil {
+		return nil, err
+	}
+	passMap := make(map[string]string)
+	for passResult.Next() {
+		rec := passResult.Record()
+		vid := ""
+		if v := rec.ValueByKey("vehicleId"); v != nil {
+			if vs, ok := v.(string); ok {
+				vid = vs
+			}
+		}
+		if vid == "" {
+			continue
+		}
+		if v := rec.Value(); v != nil {
+			if sstr, ok := v.(string); ok {
+				passMap[vid] = sstr
+			}
+		}
+	}
+	if passResult.Err() != nil {
+		return nil, passResult.Err()
+	}
+
+	// Merge numeric tmp 与 passMap，构造输出切片
+	out := make([]types.VEH2CLOUD_STATE, 0, len(tmp))
+	for vid, s := range tmp {
+		// 填充 passPoints
+		if sstr, ok := passMap[vid]; ok && sstr != "" {
+			var pts []types.Position2D
+			if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
+				s.PassPoints = pts
+			}
+		}
+		out = append(out, s)
+	}
+
+	// 另外，如果有只写了 passPoints 而无 numeric 字段的 vehicle，也把它们包含进来
+	for vid, sstr := range passMap {
+		if _, exists := tmp[vid]; !exists {
+			var s types.VEH2CLOUD_STATE
+			s.VehicleId = vid
+			if pts, err := func() ([]types.Position2D, error) {
+				var p []types.Position2D
+				if err := json.Unmarshal([]byte(sstr), &p); err != nil {
+					return nil, err
+				}
+				return p, nil
+			}(); err == nil {
+				s.PassPoints = pts
+			}
+			out = append(out, s)
+		}
+	}
+
 	return out, nil
 }

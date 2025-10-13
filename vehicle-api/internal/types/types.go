@@ -85,20 +85,52 @@ type TrajectoryResp struct {
 
 // 车辆相关 API 类型
 type VehicleInfo struct {
-	Id        string `json:"id"`
-	Type      string `json:"type"`
-	Capacity  string `json:"capacity"`
-	Battery   string `json:"battery"`
-	Speed     string `json:"speed"`
-	Lng       int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
-	Lat       int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
-	Status    string `json:"status"`
-	Route     string `json:"route"`
-	UpdatedAt string `json:"updatedAt"` // RFC3339 UTC 时间
+	Id           string `json:"id"`
+	PlateNumber 	string `json:"plateNumber"`
+	Type        	string `json:"type"`
+	TotalCapacity	string `json:"TotalCapacity"`
+	Battery	     string `json:"battery"`
+	Route   	    string `json:"route"`
+	Speed       	string `json:"speed"`
+	Lng       		int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
+	Lat       		int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
+	Status    		string `json:"status"`
+	CreatedAt 		string `json:"createdAt"` // RFC3339 UTC 时间
+	UpdatedAt 		string `json:"updatedAt"` // RFC3339 UTC 时间
 }
 
 type VehicleListResp struct {
 	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+// CreateVehicleReq 表示创建车辆静态信息的请求体
+type CreateVehicleReq struct {
+	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID
+	PlateNumber   string `json:"plateNumber"`   // 车牌号
+	Type          string `json:"type"`          // 车型
+	TotalCapacity string `json:"totalCapacity"` // 车辆总容量（可为字符串描述）
+	BatteryInfo   string `json:"batteryInfo"`   // 电池信息（电量/型号等）
+	RouteId       string `json:"routeId"`       // 所属线路编号
+	Status        string `json:"status"`        // 车辆状态（空闲/配送中/充电中/异常等）
+	Extra         string `json:"extra,optional"`// 可选扩展字段（JSON 字符串）
+}
+
+// UpdateVehicleReq 表示更新车辆信息的请求体（vehicleId 为必填）
+type UpdateVehicleReq struct {
+	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID（必填）
+	PlateNumber   *string `json:"plateNumber,optional"`   // 车牌号，指针表示可选
+	Type          *string `json:"type,optional"`          // 车型
+	TotalCapacity *string `json:"totalCapacity,optional"` // 总容量
+	BatteryInfo   *string `json:"batteryInfo,optional"`   // 电池信息
+	RouteId       *string `json:"routeId,optional"`       // 所属线路
+	Status        *string `json:"status,optional"`        // 状态
+	Extra         *string `json:"extra,optional"`// 可选扩展字段（JSON 字符串）
+}
+
+// VehicleDetailResp 表示单辆车的详情响应
+type VehicleDetailResp struct {
+	Vehicle VehicleInfo        `json:"vehicle"`
+	Extra   map[string]string  `json:"extra,omitempty"`
 }
 
 type VehicleSummaryResp struct {
@@ -113,6 +145,7 @@ type VehicleSummaryResp struct {
 type TaskRecord struct {
 	ID        int64     `json:"id" db:"id"`
 	VehicleId string    `json:"vehicleId" db:"vehicle_id"`
+	TaskId    string    `json:"taskId" db:"task_id"`
 	StartTime time.Time `json:"startTime" db:"start_time"`
 	EndTime   time.Time `json:"endTime" db:"end_time"`
 	StartLon  uint32    `json:"startLon" db:"start_lon"`

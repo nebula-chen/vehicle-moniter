@@ -9,6 +9,7 @@ import (
 	"time"
 	"vehicle-api/internal/config"
 	"vehicle-api/internal/dao"
+	"vehicle-api/internal/processor"
 	"vehicle-api/internal/types"
 	"vehicle-api/internal/websocket"
 
@@ -18,12 +19,13 @@ import (
 )
 
 type ServiceContext struct {
-	Config    config.Config
-	WSHub     *websocket.Hub
-	Dao       *dao.InfluxDao
-	Analytics *dao.AnalyticsDao
-	MySQLDB   *sql.DB
-
+	Config       config.Config
+	WSHub        *websocket.Hub
+	Dao          *dao.InfluxDao
+	Analytics    *dao.AnalyticsDao
+	MySQLDB      *sql.DB
+	MySQLDao     *dao.MySQLDao
+	Processor    processor.Processor
 	OnlineDrones sync.Map // key: uasID, value: time.Time
 }
 
@@ -64,6 +66,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 			panic("MySQL ping error: " + err.Error())
 		}
 		ctx.MySQLDB = db
+		ctx.MySQLDao = dao.NewMySQLDao(db)
+		// 初始化 Processor（已移除在 Processor 中维护 ActiveTasks 的设计）
+		ctx.Processor = processor.NewDefaultProcessor(ctx.MySQLDao)
 
 		// 自动建表（低风险的表结构创建，使用 IF NOT EXISTS）
 		if err := autoMigrate(db); err != nil {
@@ -93,22 +98,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 // autoMigrate 创建必要的 MySQL 表（使用 IF NOT EXISTS，安全可重入）
 func autoMigrate(db *sql.DB) error {
-	// vehicle_tasks: 存储任务或出车记录
+	// vehicle_records: 存储每次上报的汇总记录，增加唯一索引避免重复
 	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS vehicle_tasks (
-		id INT AUTO_INCREMENT PRIMARY KEY,
-		task_id VARCHAR(128) NOT NULL UNIQUE,
-		vehicle_id VARCHAR(128),
-		status VARCHAR(32),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-	);`)
-	if err != nil {
-		return err
-	}
-
-	// vehicle_records: 存储每次上报的汇总记录
-	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS vehicle_records (
 		id INT AUTO_INCREMENT PRIMARY KEY,
 		vehicle_id VARCHAR(128) NOT NULL,
@@ -117,24 +108,39 @@ func autoMigrate(db *sql.DB) error {
 		latitude BIGINT,
 		velocity INT,
 		extra JSON,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY uq_vehicle_time (vehicle_id, timestamp)
 	);`)
 	if err != nil {
 		return err
 	}
 
-	// vehicle_positions: 可选的轨迹点表
-	_, err = db.Exec(`
-	CREATE TABLE IF NOT EXISTS vehicle_positions (
-		id INT AUTO_INCREMENT PRIMARY KEY,
-		vehicle_id VARCHAR(128) NOT NULL,
-		point_time DATETIME NOT NULL,
-		longitude BIGINT,
-		latitude BIGINT,
-		altitude INT,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);`)
+	// 创建 vehicle_list 表（保留用于静态设备信息）
+	if err := createVehicleListTable(db); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+// 新增 vehicle_list 表：用于保存无人车静态设备信息（车牌、vehicle_id、容量、电池信息、所属线路、录入时间等）
+// 使用 IF NOT EXISTS 保证安全可重入
+func createVehicleListTable(db *sql.DB) error {
+	_, err := db.Exec(`
+	CREATE TABLE IF NOT EXISTS vehicle_list (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		vehicle_id VARCHAR(128) NOT NULL UNIQUE,
+		plate_number VARCHAR(64),
+		type VARCHAR(64),
+		total_capacity VARCHAR(64),
+		battery_info VARCHAR(255),
+		route_id VARCHAR(128),
+		status VARCHAR(64),
+		extra JSON,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`)
 	return err
 }
 
