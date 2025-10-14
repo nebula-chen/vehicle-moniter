@@ -1,6 +1,6 @@
 Name: vehicle-api
 Host: 0.0.0.0
-Port: 8666
+Port: 18888
 TCPPort: ":6000"
 InfluxDBConfig:
   Host: "influxdb"

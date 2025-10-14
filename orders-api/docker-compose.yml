@@ -1,0 +1,38 @@
+# version: '3.8'
+
+services:
+  orders-api:
+    build: .
+    container_name: orders-api
+    ports:
+      - "18887:18887"  # 订单服务端口
+    volumes:
+      - ./log:/app/log
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - my-network
+    restart: always
+    depends_on:
+      - mysql
+
+  # 复用 vehicle-api 的 mysql 服务，服务名需与 vehicle-api 保持一致
+  mysql:
+    image: mysql:8.0
+    container_name: vehicle-api-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: vehicle
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: 12345678
+      TZ: Asia/Shanghai
+    volumes:
+      - ../vehicle-api/mysql_data:/var/lib/mysql
+    networks:
+      - my-network
+    # 不暴露 3306 到宿主机
+
+networks:
+  my-network:
+    external: true
