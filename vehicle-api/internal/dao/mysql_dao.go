@@ -171,3 +171,60 @@ func (d *MySQLDao) ListVehicles() ([]map[string]interface{}, error) {
 	}
 	return out, nil
 }
+
+// SaveTaskAndPoints 保存一次任务记录及其轨迹点（在事务中）
+func (d *MySQLDao) SaveTaskAndPoints(task struct {
+	TaskId    string
+	VehicleId string
+	StartTime time.Time
+	EndTime   time.Time
+	StartLon  int64
+	StartLat  int64
+	EndLon    int64
+	EndLat    int64
+	Status    string
+}, points []struct {
+	Timestamp time.Time
+	Lon       int64
+	Lat       int64
+	Velocity  int
+}) error {
+	if d == nil || d.DB == nil {
+		return fmt.Errorf("mysql dao not initialized")
+	}
+	tx, err := d.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 插入 task_records
+	_, err = tx.Exec(`INSERT INTO task_records (task_id, vehicle_id, start_time, end_time, start_lon, start_lat, end_lon, end_lat, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.TaskId, task.VehicleId, task.StartTime, task.EndTime, task.StartLon, task.StartLat, task.EndLon, task.EndLat, task.Status)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if len(points) > 0 {
+		// 批量插入轨迹点
+		query := `INSERT INTO task_track_points (task_id, timestamp, longitude, latitude, velocity) VALUES `
+		vals := []interface{}{}
+		for _, p := range points {
+			query += `(?, ?, ?, ?, ?),`
+			vals = append(vals, task.TaskId, p.Timestamp, p.Lon, p.Lat, p.Velocity)
+		}
+		query = query[:len(query)-1]
+		_, err = tx.Exec(query, vals...)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
+}

@@ -413,3 +413,98 @@ func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VE
 
 	return out, nil
 }
+
+// QueryStatesInRange 返回指定 vehicleId 在时间区间内按时间升序的完整状态列表
+func (d *InfluxDao) QueryStatesInRange(vehicleId string, start, end time.Time) ([]types.VEH2CLOUD_STATE, error) {
+	// 使用 pivot 将各字段展平，然后按时间排序返回
+	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r["vehicleId"]=="%s") |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn: "_value") |> sort(columns:["_time"])`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), vehicleId)
+	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
+	result, err := queryAPI.Query(context.Background(), flux)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]types.VEH2CLOUD_STATE, 0)
+	for result.Next() {
+		rec := result.Record()
+		var s types.VEH2CLOUD_STATE
+		// 解析常用字段
+		s.VehicleId = vehicleId
+		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		if v := rec.ValueByKey("velocity"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Velocity = uint16(t)
+			case float64:
+				s.Velocity = uint16(t)
+			}
+		}
+		if v := rec.ValueByKey("longitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Longitude = uint32(t)
+			case float64:
+				s.Position.Longitude = uint32(t)
+			case uint64:
+				s.Position.Longitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("latitude"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.Position.Latitude = uint32(t)
+			case float64:
+				s.Position.Latitude = uint32(t)
+			case uint64:
+				s.Position.Latitude = uint32(t)
+			}
+		}
+		// 目的地
+		if v := rec.ValueByKey("destLon"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.DestLocation.Longitude = uint32(t)
+			case float64:
+				s.DestLocation.Longitude = uint32(t)
+			case uint64:
+				s.DestLocation.Longitude = uint32(t)
+			}
+		}
+		if v := rec.ValueByKey("destLat"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.DestLocation.Latitude = uint32(t)
+			case float64:
+				s.DestLocation.Latitude = uint32(t)
+			case uint64:
+				s.DestLocation.Latitude = uint32(t)
+			}
+		}
+		// passPointsNum
+		if v := rec.ValueByKey("passPointsNum"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				s.PassPointsNum = byte(t)
+			case float64:
+				s.PassPointsNum = byte(t)
+			case uint64:
+				s.PassPointsNum = byte(t)
+			}
+		}
+		// passPoints 字段为 JSON 字符串
+		if v := rec.ValueByKey("passPoints"); v != nil {
+			if sstr, ok := v.(string); ok && sstr != "" {
+				var pts []types.Position2D
+				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
+					s.PassPoints = pts
+				}
+			}
+		}
+
+		out = append(out, s)
+	}
+	if result.Err() != nil {
+		return nil, result.Err()
+	}
+	return out, nil
+}

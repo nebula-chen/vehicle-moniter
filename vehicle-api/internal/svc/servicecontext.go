@@ -120,6 +120,42 @@ func autoMigrate(db *sql.DB) error {
 		return err
 	}
 
+	// 创建任务记录表和任务轨迹点表
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS task_records (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		task_id VARCHAR(128) NOT NULL UNIQUE,
+		vehicle_id VARCHAR(128) NOT NULL,
+		start_time DATETIME NOT NULL,
+		end_time DATETIME,
+		start_lon BIGINT,
+		start_lat BIGINT,
+		end_lon BIGINT,
+		end_lat BIGINT,
+		status VARCHAR(32),
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS task_track_points (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		task_id VARCHAR(128) NOT NULL,
+		timestamp DATETIME,
+		longitude BIGINT,
+		latitude BIGINT,
+		velocity INT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		INDEX idx_task_id (task_id)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -174,6 +210,14 @@ func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 			"velocity":  req.Velocity,
 		})
 		sc.WSHub.Broadcast <- bs
+	}
+
+	// 将该状态交给 Processor 处理（如持久化轨迹点、任务识别）
+	// 这样 TCP 上报路径会直接触发任务检测与入库
+	if sc.Processor != nil {
+		if err := sc.Processor.ProcessState(req); err != nil {
+			logx.Errorf("processor process state error: %v", err)
+		}
 	}
 
 	// TODO: parsing planningLocs, detectionData, custom cargo fields
