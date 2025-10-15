@@ -8,11 +8,28 @@ type BaseResp struct {
 	Msg  string `json:"msg"`
 }
 
+type OrderCreateInfo struct {
+	Type           string   `json:"type"`                    // 订单类型，普件、特快、冷藏、冷冻
+	Weight         int      `json:"weight"`                  // 重量，单位：千克（kg）精确到小数点后 1 位，乘 10 后传输
+	Sender         string   `json:"sender"`                  // 寄件人姓名
+	SenderPhone    string   `json:"senderPhone"`             // 寄件人联系方式
+	SenderAddress  string   `json:"senderAddress"`           // 寄件地址
+	Addressee      string   `json:"addressee"`               // 收件人姓名
+	AddresseePhone string   `json:"addresseePhone"`          // 收件人联系方式
+	Address        string   `json:"address"`                 // 收件地址
+	PassStations   []string `json:"passStations,optional"`   // 途径站点列表，订单开始到完成所有途径站点的编号
+	PassVehicle    []string `json:"passVehicle,optional"`    // 配送车辆列表，订单开始到完成所有参与配送车辆的编号
+	PassRoute      []string `json:"passRoute,optional"`      // 配送路线列表，订单开始到完成所有途径路线的路线编号
+	PassGridMember []string `json:"passGridMember,optional"` // 配送网格员列表，订单开始到完成所有参与配送网格员的编号
+	Note           string   `json:"note,optional"`           // 可选，备注信息
+}
+
 type OrderDeleteReq struct {
 	OrderId string `json:"orderId"`
 }
 
-type OrderInfo struct {
+type OrderInfoResp struct {
+	OrderId        string   `json:"orderId"`                 // 订单专属编号，8位创建日期（YYYYMMDD）－ 8位随机码（数字或字母均可）如：20240320-owvGyLqe
 	Type           string   `json:"type"`                    // 订单类型，普件、特快、冷藏、冷冻
 	Weight         int      `json:"weight"`                  // 重量，单位：千克（kg）精确到小数点后 1 位，乘 10 后传输
 	Sender         string   `json:"sender"`                  // 寄件人姓名
@@ -36,14 +53,14 @@ type OrderListReq struct {
 	EndTime      string `json:"endTime,optional"`      // 筛选，订单结束时间，格式"yyyyMMddHHmmss"，例：2024012409500
 	Status       string `json:"status,optional"`       // 筛选，订单状态，配送中、待取件、已完成、异常
 	StationId    string `json:"stationId,optional"`    // 筛选，途径站点的编号
-	VehicleId    string `json:"vehicleId,optional"`    // 筛选，途径站点的编号
-	RouteId      string `json:"routeId,optional"`      // 筛选，途径站点的编号
-	GridMemberId string `json:"gridMemberId,optional"` // 筛选，途径站点的编号
+	VehicleId    string `json:"vehicleId,optional"`    // 筛选，配送车辆编号
+	RouteId      string `json:"routeId,optional"`      // 筛选，配送路线编号
+	GridMemberId string `json:"gridMemberId,optional"` // 筛选，配送网格员编号
 }
 
 type OrderListResp struct {
-	OrdersList []OrderInfo `json:"ordersList"`
-	Total      int         `json:"total"`
+	OrdersList []OrderInfoResp `json:"ordersList"`
+	Total      int             `json:"total"`
 }
 
 type OrderUpdateReq struct {

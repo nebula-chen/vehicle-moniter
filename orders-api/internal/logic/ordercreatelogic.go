@@ -27,7 +27,7 @@ func NewOrderCreateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Order
 	}
 }
 
-func (l *OrderCreateLogic) OrderCreate(req *types.OrderInfo) (resp *types.BaseResp, err error) {
+func (l *OrderCreateLogic) OrderCreate(req *types.OrderCreateInfo) (resp *types.BaseResp, err error) {
 	resp = &types.BaseResp{Code: 0, Msg: "ok"}
 
 	if req == nil {
@@ -47,6 +47,9 @@ func (l *OrderCreateLogic) OrderCreate(req *types.OrderInfo) (resp *types.BaseRe
 	randomCode := string(b)
 	orderId := fmt.Sprintf("%s-%s", timestamp, randomCode)
 
+	// 自动生成订单创建时间，格式为 yyyyMMddHHmmss
+	createTime := time.Now().Format("20060102150405")
+
 	// 将 req 转为 map[string]interface{} 以便 DAO 序列化复杂字段
 	raw := map[string]interface{}{
 		"type":           req.Type,
@@ -57,9 +60,9 @@ func (l *OrderCreateLogic) OrderCreate(req *types.OrderInfo) (resp *types.BaseRe
 		"addressee":      req.Addressee,
 		"addresseePhone": req.AddresseePhone,
 		"address":        req.Address,
-		"startTime":      req.StartTime,
-		"endTime":        req.EndTime,
-		"status":         req.Status,
+		"startTime":      createTime,
+		"endTime":        nil,   // 新建订单无结束时间
+		"status":         "配送中", // 新建订单默认状态为 配送中
 		"passStations":   req.PassStations,
 		"passVehicle":    req.PassVehicle,
 		"passRoute":      req.PassRoute,
