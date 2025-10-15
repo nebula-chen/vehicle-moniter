@@ -2,7 +2,7 @@ Name: orders-api
 Host: 0.0.0.0
 Port: 18887
 MySQL:
-  host: "mysql"        # docker-compose 中定义的服务名，与 vehicle-api 共用
+  host: "vehicle-api-mysql"        # 使用已有的 vehicle-api-mysql 容器
   port: "3306"
   user: "admin"
   password: "12345678"

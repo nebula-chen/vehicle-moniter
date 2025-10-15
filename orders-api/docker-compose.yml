@@ -13,26 +13,8 @@ services:
     networks:
       - my-network
     restart: always
-    depends_on:
-      - mysql
-
-  # 复用 vehicle-api 的 mysql 服务，服务名需与 vehicle-api 保持一致
-  mysql:
-    image: mysql:8.0
-    container_name: vehicle-api-mysql
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: root123456
-      MYSQL_DATABASE: vehicle
-      MYSQL_USER: admin
-      MYSQL_PASSWORD: 12345678
-      TZ: Asia/Shanghai
-    volumes:
-      - ../vehicle-api/mysql_data:/var/lib/mysql
-    networks:
-      - my-network
-    # 不暴露 3306 到宿主机
 
 networks:
   my-network:
     external: true
+    name: my-network

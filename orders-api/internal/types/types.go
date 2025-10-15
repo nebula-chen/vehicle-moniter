@@ -13,23 +13,22 @@ type OrderDeleteReq struct {
 }
 
 type OrderInfo struct {
-	OrderId        string   `json:"orderId"`        // 订单专属编号，8位创建日期（YYYYMMDD）－ 8位随机码（数字或字母均可）如：20240320-owvGyLqe
-	Type           string   `json:"type"`           // 订单类型，普件、特快、冷藏、冷冻
-	Weight         int      `json:"weight"`         // 重量，单位：千克（kg）精确到小数点后 1 位，乘 10 后传输
-	Sender         string   `json:"sender"`         // 寄件人姓名
-	SenderPhone    string   `json:"senderPhone"`    // 寄件人联系方式
-	SenderAddress  string   `json:"senderAddress"`  // 寄件地址
-	Addressee      string   `json:"addressee"`      // 收件人姓名
-	AddresseePhone string   `json:"addresseePhone"` // 收件人联系方式
-	Address        string   `json:"address"`        // 收件地址
-	StartTime      string   `json:"startTime"`      // 订单开始时间，格式"yyyyMMddHHmmss"，例：2024012409500
-	EndTime        string   `json:"endTime"`        // 订单结束时间，格式"yyyyMMddHHmmss"，例：2024012409500
-	Status         string   `json:"status"`         // 订单状态，配送中、待取件、已完成、异常
-	PassStations   []string `json:"passStations"`   // 途径站点列表，订单开始到完成所有途径站点的编号
-	PassVehicle    []string `json:"passVehicle"`    // 配送车辆列表，订单开始到完成所有参与配送车辆的编号
-	PassRoute      []string `json:"passRoute"`      // 配送路线列表，订单开始到完成所有途径路线的路线编号
-	PassGridMember []string `json:"passGridMember"` // 配送网格员列表，订单开始到完成所有参与配送网格员的编号
-	Note           string   `json:"note,optional"`  // 可选，备注信息
+	Type           string   `json:"type"`                    // 订单类型，普件、特快、冷藏、冷冻
+	Weight         int      `json:"weight"`                  // 重量，单位：千克（kg）精确到小数点后 1 位，乘 10 后传输
+	Sender         string   `json:"sender"`                  // 寄件人姓名
+	SenderPhone    string   `json:"senderPhone"`             // 寄件人联系方式
+	SenderAddress  string   `json:"senderAddress"`           // 寄件地址
+	Addressee      string   `json:"addressee"`               // 收件人姓名
+	AddresseePhone string   `json:"addresseePhone"`          // 收件人联系方式
+	Address        string   `json:"address"`                 // 收件地址
+	Status         string   `json:"status"`                  // 订单状态，配送中、待取件、已完成、异常
+	StartTime      string   `json:"startTime"`               // 订单开始时间，格式"yyyyMMddHHmmss"，例：2024012409500
+	EndTime        string   `json:"endTime,optional"`        // 订单结束时间，格式"yyyyMMddHHmmss"，例：2024012409500
+	PassStations   []string `json:"passStations,optional"`   // 途径站点列表，订单开始到完成所有途径站点的编号
+	PassVehicle    []string `json:"passVehicle,optional"`    // 配送车辆列表，订单开始到完成所有参与配送车辆的编号
+	PassRoute      []string `json:"passRoute,optional"`      // 配送路线列表，订单开始到完成所有途径路线的路线编号
+	PassGridMember []string `json:"passGridMember,optional"` // 配送网格员列表，订单开始到完成所有参与配送网格员的编号
+	Note           string   `json:"note,optional"`           // 可选，备注信息
 }
 
 type OrderListReq struct {
@@ -50,6 +49,7 @@ type OrderListResp struct {
 type OrderUpdateReq struct {
 	OrderId        string   `json:"orderId"`
 	Status         string   `json:"status,optional"`
+	EndTime        string   `json:"endTime,optional"`
 	PassStations   []string `json:"passStations,optional"`
 	PassVehicle    []string `json:"passVehicle,optional"`
 	PassRoute      []string `json:"passRoute,optional"`
