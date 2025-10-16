@@ -1,0 +1,18 @@
+services:
+  route-api:
+    build: .
+    container_name: route-api
+    ports:
+      - "18889:18889"  # 路由服务端口
+    volumes:
+      - ./log:/app/log
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - my-network
+    restart: always
+
+networks:
+  my-network:
+    external: true
+    name: my-network

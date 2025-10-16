@@ -1,0 +1,71 @@
+// goctl api go -api route.api -dir .
+type BaseResp {
+	Code int    `json:"code"` // 0=成功，非0=失败
+	Msg  string `json:"msg"`
+}
+
+type RouteCreateInfo {
+	StartStation string   `json:"startStation"` // 起点站的站点编号
+	EndStation   string   `json:"endStation"` // 终点站
+	PassStations []string `json:"passStations,optional"` // 途径站点的站点编号列表
+	PassVehicles []string `json:"passVehicles,optional"` // 下属车辆编号列表
+	Distance     int      `json:"distance,optional"` // 距离，单位：米（m）
+	Note         string   `json:"note,optional"` // 备注信息
+}
+
+type RouteInfoResp {
+	RouteId      string   `json:"routeId"` // 路线编号
+	CreateTime   string   `json:"createTime"` // 创建时间
+	UpdateTime   string   `json:"updateTime"` // 最近更新时间
+	Status       string   `json:"status"` // 路线状态，空闲、拥挤、测试
+	StartStation string   `json:"startStation"` // 起点站的站点编号
+	EndStation   string   `json:"endStation"` // 终点站
+	PassStations []string `json:"passStations"` // 途径站点的站点编号列表
+	PassVehicles []string `json:"passVehicles"` // 下属车辆编号列表
+	Distance     int      `json:"distance"` // 距离，单位：米（m）
+	Note         string   `json:"note"` // 备注信息
+}
+
+type RouteListReq {
+	RouteId   string `json:"routeId,optional"` // 筛选，路线编号
+	StationId string `json:"stationId,optional"` // 筛选，途径站点的编号
+	VehicleId string `json:"vehicleId,optional"` // 筛选，配送车辆编号
+	Status    string `json:"status,optional"` // 筛选，路线状态，空闲、拥挤、测试
+}
+
+type RouteListResp {
+	RouteList []RouteInfoResp `json:"routeList"`
+}
+
+type RouteUpdateReq {
+	RouteId      string   `json:"routeId"`
+	Status       string   `json:"status,optional"` // 路线状态，空闲、拥挤、测试
+	StartStation string   `json:"startStation,optional"` // 起点站的站点编号
+	EndStation   string   `json:"endStation,optional"` // 终点站
+	PassStations []string `json:"passStations,optional"` // 途径站点的站点编号列表
+	PassVehicles []string `json:"passVehicles,optional"` // 下属车辆编号列表
+	Distance     int      `json:"distance,optional"` // 距离，单位：米（m）
+	Note         string   `json:"note,optional"` // 备注信息
+}
+
+type RouteDeleteReq {
+	RouteId string `json:"routeId"`
+}
+
+service route-api {
+	@handler RouteCreate // 创建订单
+	post /api/route/create (RouteCreateInfo) returns (BaseResp)
+
+	@handler GetRouteInfo // 查询订单详情
+	get /api/route/detail/:routeId returns (RouteInfoResp)
+
+	@handler GetRouteList // 批量查询订单信息
+	get /api/route/list (RouteListReq) returns (RouteListResp)
+
+	@handler RouteUpdate // 更新订单
+	post /api/route/update (RouteUpdateReq) returns (BaseResp)
+
+	@handler RouteDelete // 删除订单
+	post /api/order/delete (RouteDeleteReq) returns (BaseResp)
+}
+
