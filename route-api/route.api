@@ -53,19 +53,19 @@ type RouteDeleteReq {
 }
 
 service route-api {
-	@handler RouteCreate // 创建订单
+	@handler RouteCreate // 创建路线
 	post /api/route/create (RouteCreateInfo) returns (BaseResp)
 
-	@handler GetRouteInfo // 查询订单详情
+	@handler GetRouteInfo // 查询路线详情
 	get /api/route/detail/:routeId returns (RouteInfoResp)
 
-	@handler GetRouteList // 批量查询订单信息
+	@handler GetRouteList // 批量查询路线信息
 	get /api/route/list (RouteListReq) returns (RouteListResp)
 
-	@handler RouteUpdate // 更新订单
+	@handler RouteUpdate // 更新路线
 	post /api/route/update (RouteUpdateReq) returns (BaseResp)
 
-	@handler RouteDelete // 删除订单
-	post /api/order/delete (RouteDeleteReq) returns (BaseResp)
+	@handler RouteDelete // 删除路线
+	post /api/route/delete (RouteDeleteReq) returns (BaseResp)
 }
 
