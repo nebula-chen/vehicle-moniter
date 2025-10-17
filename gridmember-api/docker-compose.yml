@@ -1,0 +1,18 @@
+services:
+  gridmembers-api:
+    build: .
+    container_name: gridmembers-api
+    ports:
+      - "18886:18886"  # 网格成员服务端口
+    volumes:
+      - ./log:/app/log
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - my-network
+    restart: always
+
+networks:
+  my-network:
+    external: true
+    name: my-network
