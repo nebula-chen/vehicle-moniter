@@ -80,7 +80,9 @@ const vehiclesData = [
 ];
 
 // expose to global for other scripts
-window.vehiclesData = vehiclesData;
+// 注意：为让前端优先调用后端接口进行联调测试，临时不要将静态车辆数据暴露到全局。
+// 如果需要恢复静态数据，将下行改回 `window.vehiclesData = vehiclesData;`
+window._vehiclesData = vehiclesData; // 临时私有副本，前端不会自动使用此变量
 
 // 示例：仓库与门店（供地图与筛选使用，id 可用于订单/任务关联）
 const WAREHOUSES = [
@@ -410,5 +412,8 @@ const vehicleTasks = [
   }
 ];
 
-window.fetchVehicles = fetchVehicles;
+// 注意：文件内提供的 fetchVehicles 为静态数据的本地回退实现。
+// 为保证前端优先调用真实后端接口，暂时不覆盖全局的 fetchVehicles。
+// 若需要恢复本地 fetch 行为，可将下行改回 `window.fetchVehicles = fetchVehicles;`
+window._fetchVehicles = fetchVehicles; // 暂不导出到 window
 window.vehicleTasks = vehicleTasks;

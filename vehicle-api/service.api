@@ -94,44 +94,41 @@ type VehicleSummaryResp {
 	Abnormal int `json:"abnormal"`
 }
 
-// Analytics 统计 API 定义
-type AnalyticsReq {
-	startDate   string `json:"startDate"` // 可选，格式 yyyy-mm-dd 或 RFC3339
-	endDate     string `json:"endDate"` // 可选
-	groupBy     string `json:"groupBy"` // 可选：day|week|month
-	rangeDays   int    `json:"rangeDays,optional"` // 可选，优先级低于 start/end
-	region      string `json:"region,optional"` // 可选：按区域过滤
-	vehicleType string `json:"vehicleType,optional"` // 可选：按车型过滤
+// 通用操作结果
+type ResultResp {
+	result string `json:"result"`
 }
 
-type TimeSeries {
-	dates  []string  `json:"dates"`
-	values []float64 `json:"values"`
-	total  float64   `json:"total"`
+// 创建车辆请求（静态信息）
+type CreateVehicleReq {
+	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID
+	PlateNumber   string `json:"plateNumber"`   // 车牌号
+	Type          string `json:"type"`          // 车型
+	TotalCapacity string `json:"totalCapacity"` // 总容量
+	BatteryInfo   string `json:"batteryInfo"`   // 电池信息
+	RouteId       string `json:"routeId"`       // 所属线路
+	Status        string `json:"status"`        // 状态
+	Extra         string `json:"extra,optional"`// 可选扩展字段
 }
 
-type EfficiencyCompareSeries {
-	dates    []string  `json:"dates"`
-	smallVan []float64 `json:"smallVan"`
-	largeVan []float64 `json:"largeVan"`
+// 更新车辆请求（部分更新）
+type UpdateVehicleReq {
+	VehicleId     string  `json:"vehicleId"`     // 必填
+	PlateNumber   *string `json:"plateNumber,optional"`
+	Type          *string `json:"type,optional"`
+	TotalCapacity *string `json:"totalCapacity,optional"`
+	BatteryInfo   *string `json:"batteryInfo,optional"`
+	RouteId       *string `json:"routeId,optional"`
+	Status        *string `json:"status,optional"`
+	Extra         *string `json:"extra,optional"`
 }
 
-type RatingsSeries {
-	dates []string `json:"dates"`
-	good  []int    `json:"good"`
-	mid   []int    `json:"mid"`
-	bad   []int    `json:"bad"`
+// 单车辆详情响应（静态 + 可选实时字段）
+type VehicleDetailResp {
+	Vehicle VehicleInfo        `json:"vehicle"`
+	Extra   map[string]string  `json:"extra,omitempty"`
 }
 
-type AnalyticsOverviewResp {
-	orderCount        TimeSeries              `json:"orderCount"`
-	orderAmount       TimeSeries              `json:"orderAmount"`
-	vehicleUtil       TimeSeries              `json:"vehicleUtil"`
-	deliveryEff       TimeSeries              `json:"deliveryEff"`
-	efficiencyCompare EfficiencyCompareSeries `json:"efficiencyCompare"`
-	ratings           RatingsSeries           `json:"ratings"`
-	complaints        TimeSeries              `json:"complaints"`
-}
 
 service vehicle-api {
 	@handler HandleWebSocket
@@ -143,14 +140,26 @@ service vehicle-api {
 	@handler HandleGetTrajectory
 	post /api/vehicle/gettrajectory (TrajectoryReq) returns (TrajectoryResp)
 
-	@handler HandleAnalyticsOverview
-	post /api/analytics/overview (AnalyticsReq) returns (AnalyticsOverviewResp)
+	@handler HandleCreateVehicle
+	post /api/vehicles (CreateVehicleReq) returns (ResultResp)
 
-	// 可以按需单独查询某个指标
-	@handler HandleAnalyticsOrderCount
-	get /api/analytics/order_count (AnalyticsReq) returns (TimeSeries)
+	@handler HandleGetVehicle
+	get /api/vehicles/detail (string) returns (VehicleDetailResp)
 
-	@handler HandleAnalyticsOrderAmount
-	get /api/analytics/order_amount (AnalyticsReq) returns (TimeSeries)
+	@handler HandleUpdateVehicle
+	put /api/vehicles (UpdateVehicleReq) returns (ResultResp)
+
+	@handler HandleDeleteVehicle
+	delete /api/vehicles (string) returns (ResultResp)
+
+	@handler HandleVehiclesSummary
+	get /api/vehicles/summary returns (VehicleSummaryResp)
+
+	@handler HandleVehiclesList
+	get /api/vehicles/statelist returns (VehicleListResp)
+
+	@handler HandleListVehicles
+	get /api/vehicles/staticlist returns (VehicleListResp)
+
 }
 

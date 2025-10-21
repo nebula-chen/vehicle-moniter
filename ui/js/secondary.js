@@ -14,6 +14,39 @@ function toggleSub(el) {
     }
 }
 
+// 时间处理工具：识别 ISO/UTC 时间字符串并转换为北京时间（东八区），格式化为 `YYYY-MM-DD HH:mm:ss`
+function isIsoUtcString(s) {
+    if (!s || typeof s !== 'string') return false;
+    // 常见 ISO 示例：2025-10-13T08:53:51Z 或 2025-10-13T08:53:51+00:00
+    return s.indexOf('T') !== -1 || /Z$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
+}
+
+function utcToBeijing(iso) {
+    if (!iso) return '';
+    try {
+        if (!isIsoUtcString(iso)) return iso; // 如果不是 ISO/UTC 字符串，认为已经是本地/格式化字符串，直接返回
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        const beijingMs = d.getTime() + 8 * 3600 * 1000;
+        const b = new Date(beijingMs);
+        const Y = b.getUTCFullYear();
+        const M = String(b.getUTCMonth() + 1).padStart(2, '0');
+        const D = String(b.getUTCDate()).padStart(2, '0');
+        const h = String(b.getUTCHours()).padStart(2, '0');
+        const m = String(b.getUTCMinutes()).padStart(2, '0');
+        const s = String(b.getUTCSeconds()).padStart(2, '0');
+        return `${Y}-${M}-${D} ${h}:${m}:${s}`;
+    } catch (e) {
+        return iso;
+    }
+}
+
+function formatTimeForDisplay(s) {
+    if (!s) return '';
+    if (isIsoUtcString(s)) return utcToBeijing(s);
+    return s;
+}
+
 /////////   筛选功能   /////////
 // 订单筛选
 function filterOrders() {
@@ -323,7 +356,7 @@ function showDetail(item) {
         let subs = [];
         if (Array.isArray(r.vehicles)) subs = r.vehicles.slice();
         else {
-            const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+            const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
             subs = vehicles.filter(v => ((v.routeId||v.route||'')+'').includes(r.id || '')).map(v => v.id);
         }
 
@@ -428,6 +461,108 @@ function showDetail(item) {
     panel.setAttribute('aria-hidden', 'false');
     panel.style.transform = 'translateX(0)';
 }
+
+// ---------- 车辆相关的后端交互与详情渲染 ----------
+// 从后端拉取车辆列表，返回 Promise，解析为 types.VehicleListResp 结构
+function fetchVehicles() {
+    // 若全局已存在 vehiclesData，则直接返回它，保持兼容性
+    if (Array.isArray(window.vehiclesData) && window.vehiclesData.length > 0) {
+        return Promise.resolve(window.vehiclesData);
+    }
+    // 否则调用后端 API：GET /api/vehicles/staticlist
+    return fetch('/api/vehicles/staticlist', { method: 'GET', cache: 'no-store' })
+        .then(resp => {
+            if (!resp.ok) throw new Error('网络错误: ' + resp.status);
+            return resp.json();
+        })
+        .then(json => {
+            // 服务器返回 { vehicles: [...] }
+            if (json && Array.isArray(json.vehicles)) {
+                // 将结果缓存在 window.vehiclesData 以便其它模块使用（运行时缓存）
+                window.vehiclesData = json.vehicles;
+                return json.vehicles;
+            }
+            return [];
+        });
+}
+
+// 拉取单辆车详情：GET /api/vehicles/detail?id=...
+function fetchVehicleDetail(id) {
+    if (!id) return Promise.reject(new Error('vehicle id required'));
+    return fetch('/api/vehicles/detail?id=' + encodeURIComponent(id), { method: 'GET', cache: 'no-store' })
+        .then(resp => {
+            if (!resp.ok) throw new Error('网络错误: ' + resp.status);
+            return resp.json();
+        })
+        .then(json => {
+            // 期望 { vehicle: {...}, extra: {...} }
+            if (json && json.vehicle) return json;
+            throw new Error('无效的车辆详情响应');
+        });
+}
+
+// 当用户点击车辆行时打开详情（优先使用后端详情接口）
+function openVehicleDetail(id) {
+    if (!id) return;
+    // 先显示 loading 状态
+    const panel = document.getElementById('detail-panel');
+    const content = document.getElementById('detail-content');
+    if (panel && content) {
+        panel.setAttribute('aria-hidden', 'false');
+        panel.style.transform = 'translateX(0)';
+        content.innerHTML = '<div class="loading">加载中...</div>';
+    }
+    fetchVehicleDetail(id).then(resp => {
+        try {
+            const v = resp.vehicle || {};
+            const extra = resp.extra || {};
+            // 构建详情列表（中文注释）
+            const ul = document.createElement('ul');
+            ul.className = 'info-list';
+            function push(label, value) {
+                const li = document.createElement('li');
+                li.className = 'info-item';
+                const l = document.createElement('div'); l.className = 'label'; l.textContent = label;
+                const vdiv = document.createElement('div'); vdiv.className = 'value';
+                vdiv.textContent = (value !== undefined && value !== null) ? String(value) : '--';
+                li.appendChild(l); li.appendChild(vdiv); ul.appendChild(li);
+            }
+            push('车辆ID', v.id || v.vehicleId || '');
+            push('车牌号', v.plateNumber || '');
+            push('车型', v.type || '');
+            push('总容量', v.totalCapacity || v.TotalCapacity || '');
+            push('电池信息', v.battery || v.batteryInfo || '');
+            push('所属路线', v.route || v.routeId || '');
+            push('状态', v.status || '');
+            push('速度', v.speed || '');
+            push('坐标(lng,lat)', (v.lng != null && v.lat != null) ? (v.lng + ',' + v.lat) : (v.location || ''));
+            push('创建时间', formatTimeForDisplay(v.createdAt || v.CreatedAt || ''));
+            push('更新时间', formatTimeForDisplay(v.updatedAt || v.UpdatedAt || v.UpdatedAt || ''));
+            // 展示 extra 信息（如果存在）
+            if (extra && Object.keys(extra).length > 0) {
+                const li = document.createElement('li'); li.className = 'info-item';
+                const l = document.createElement('div'); l.className = 'label'; l.textContent = '扩展信息';
+                const vdiv = document.createElement('div'); vdiv.className = 'value';
+                vdiv.innerHTML = '<pre style="white-space:pre-wrap; font-size:12px;">' + escapeHtml(JSON.stringify(extra, null, 2)) + '</pre>';
+                li.appendChild(l); li.appendChild(vdiv); ul.appendChild(li);
+            }
+            // 替换内容
+            if (content) { content.innerHTML = ''; content.appendChild(ul); }
+        } catch (e) {
+            if (content) content.innerHTML = '<div class="error">渲染详情失败</div>';
+            console.error(e);
+        }
+    }).catch(err => {
+        if (content) content.innerHTML = '<div class="error">获取车辆详情失败: ' + (err && err.message ? escapeHtml(err.message) : '') + '</div>';
+        console.error('fetchVehicleDetail failed', err);
+    });
+}
+
+// 简单的 HTML 转义
+function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 
 // 使用统一的 DOMContentLoaded 处理器并保护性地调用各页面初始化
 
@@ -675,9 +810,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch(e) { console.warn('stations-manage apply param failed', e); }
             } catch (e) { console.error('stations-manage init failed', e); }
         } else if (page === 'car-manage') {
-            try { 
-                // 初始渲染车辆表格
-                renderVehicleTable(window.vehiclesData || []);
+            try {
+                // 不再默认使用静态 data.js 中的 vehiclesData，优先从后端拉取并渲染
+                if (typeof fetchVehicles === 'function') {
+                    // 显示加载占位
+                    const tbody = document.getElementById('table-body');
+                    if (tbody) tbody.innerHTML = '<tr class="table-loading"><td colspan="8">加载中……</td></tr>';
+                    fetchVehicles().then(remote => {
+                        try {
+                            // 服务器返回数组或 { vehicles: [...] }
+                            const arr = Array.isArray(remote) ? remote : (remote && Array.isArray(remote.vehicles) ? remote.vehicles : []);
+                            // 将后端数据写入运行时缓存 window.vehiclesData
+                            window.vehiclesData = arr;
+                            renderVehicleTable(normalizeVehicles(arr));
+                        } catch (e) {
+                            console.warn('渲染后端车辆数据失败，回退到本地静态数据', e);
+                            // 回退：若存在本地静态数据则使用它
+                            // 回退：若存在本地静态私有数据则使用它
+                            if (Array.isArray(window._vehiclesData)) renderVehicleTable(normalizeVehicles(window._vehiclesData));
+                            else if (Array.isArray(window.vehiclesData)) renderVehicleTable(normalizeVehicles(window.vehiclesData));
+                            else renderVehicleTable([]);
+                        }
+                    }).catch(e => {
+                        console.warn('fetchVehicles failed, fallback to local static data', e);
+                        // 后端请求失败时，回退到本地静态数据（如果存在）以便调试
+                        if (Array.isArray(window._vehiclesData)) renderVehicleTable(normalizeVehicles(window._vehiclesData));
+                        else if (Array.isArray(window.vehiclesData)) renderVehicleTable(normalizeVehicles(window.vehiclesData));
+                        else renderVehicleTable([]);
+                    });
+                } else {
+                    // 若 fetchVehicles 不可用，则回退使用本地静态数据
+                    renderVehicleTable(Array.isArray(window._vehiclesData) ? normalizeVehicles(window._vehiclesData) : (Array.isArray(window.vehiclesData) ? normalizeVehicles(window.vehiclesData) : []));
+                }
                 // 绑定筛选表单
                 const filterForm = document.getElementById('filterForm');
                 if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterCar(); });
@@ -705,7 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 (function applyFilterWhenReady(){
                     var attempts = 0;
                     var maxAttempts = 40; // ~6s
-                    if (typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData) && typeof filterCar === 'function') {
+                    if ((typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData)) || (typeof window._vehiclesData !== 'undefined' && Array.isArray(window._vehiclesData)) && typeof filterCar === 'function') {
                         try { filterCar(); } catch(e) { console.warn('filterCar failed', e); }
                         return;
                     }
@@ -716,7 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     var tid = setInterval(function(){
                         attempts++;
-                        if ((typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData)) || typeof fetchVehicles === 'function' || attempts >= maxAttempts) {
+                        if (((typeof window.vehiclesData !== 'undefined' && Array.isArray(window.vehiclesData)) || (typeof window._vehiclesData !== 'undefined' && Array.isArray(window._vehiclesData))) || typeof fetchVehicles === 'function' || attempts >= maxAttempts) {
                             clearInterval(tid);
                             if (typeof filterCar === 'function') {
                                 try { filterCar(); } catch(e) { console.warn('filterCar failed', e); }
@@ -774,13 +938,13 @@ function renderVehicleTable(list) {
             <td>${v.id || ''}</td>
             <td>${v.type || ''}</td>
             <td>${v.status || ''}</td>
-            <td>${v.capacity || ''}</td>
-            <td>${v.battery || ''}</td>
-            <td>${v.routeId || ''}</td>
-            <td>${v.createdAt || ''}</td>
+            <td>${v.capacity || v.totalCapacity || v.total_capacity || ''}</td>
+            <td>${v.battery || v.batteryInfo || ''}</td>
+            <td>${v.routeId || v.route || ''}</td>
+            <td>${formatTimeForDisplay(v.createdAt || v.created_at || v.CreatedAt || '')}</td>
             <td><button class="btn-monitor" data-vehicle="${v.id || ''}" title="实时监控">实时监控</button></td>
         `;
-        tr.addEventListener('click', () => showDetail(v));
+        tr.addEventListener('click', () => openVehicleDetail(v.id || v.vehicleId || ''));
         // prevent row click when clicking the monitor button
         const monitorBtn = tr.querySelector('.btn-monitor');
         if (monitorBtn) {
@@ -803,36 +967,58 @@ function filterCar() {
     const route = (document.getElementById('filter-route') && document.getElementById('filter-route').value.trim()) || '';
     const status = (document.getElementById('filterStatus') && document.getElementById('filterStatus').value) || '';
 
-    // 数据来源优先 window.vehiclesData，再尝试 window.fetchVehicles()
-    let data = Array.isArray(window.vehiclesData) ? window.vehiclesData.slice() : [];
-    if ((!data || data.length === 0) && typeof fetchVehicles === 'function') {
+    // 优先从后端拉取实时数据进行筛选；若后端不可达则回退到本地静态数据
+    if (typeof fetchVehicles === 'function') {
         try {
             const res = fetchVehicles();
-            // 如果 fetchVehicles 返回 Promise，则异步处理
             if (res && typeof res.then === 'function') {
                 res.then(remote => {
-                    const arr = normalizeVehicles(remote);
-                        // 使用与同步分支相同的状态别名匹配
+                    const arrRaw = Array.isArray(remote) ? remote : (remote && Array.isArray(remote.vehicles) ? remote.vehicles : []);
+                    const arr = normalizeVehicles(arrRaw);
+                    // 使用与同步分支相同的状态别名匹配
+                    const VEHICLE_STATUS_ALIASES = {
+                        '配送中': ['配送中', '配送进行中', '运输中', '派送中', '在途'],
+                        '在途': ['在途', '配送中'],
+                        '空闲': ['空闲', '待命', '闲置'],
+                        '充电中': ['充电中', '充电'],
+                        '异常': ['异常', '故障', '问题', '待处理']
+                    };
+                    const matched = arr.filter(v => {
+                        const vstatus = (v.status || '') + '';
+                        const statusMatch = (function(){
+                            if (!status) return true;
+                            const aliases = VEHICLE_STATUS_ALIASES[status] || [status];
+                            return aliases.some(a => vstatus.includes(a));
+                        })();
+                        return (id === '' || (v.id || '').includes(id)) &&
+                               (route === '' || (v.routeId || '').includes(route)) &&
+                               statusMatch;
+                    });
+                    renderVehicleTable(matched);
+                }).catch(err => {
+                    console.warn('fetchVehicles failed in filterCar, fallback to local static data', err);
+                    // fallback to local static data
+                    const dataFallback = Array.isArray(window._vehiclesData) ? normalizeVehicles(window._vehiclesData) : (Array.isArray(window.vehiclesData) ? normalizeVehicles(window.vehiclesData) : []);
+                    const matched = dataFallback.filter(v => {
+                        const vstatus = (v.status || '') + '';
                         const VEHICLE_STATUS_ALIASES = {
-                            '配送中': ['配送中', '配送进行中', '运输中', '派送中', '在途'],
+                            '配送中': ['配送中', '运输中', '派送中', '在途'],
                             '在途': ['在途', '配送中'],
                             '空闲': ['空闲', '待命', '闲置'],
                             '充电中': ['充电中', '充电'],
                             '异常': ['异常', '故障', '问题', '待处理']
                         };
-                        const matched = arr.filter(v => {
-                            const vstatus = (v.status || '') + '';
-                            const statusMatch = (function(){
-                                if (!status) return true;
-                                const aliases = VEHICLE_STATUS_ALIASES[status] || [status];
-                                return aliases.some(a => vstatus.includes(a));
-                            })();
-                            return (id === '' || (v.id || '').includes(id)) &&
-                                   (route === '' || (v.routeId || '').includes(route)) &&
-                                   statusMatch;
-                        });
+                        const statusMatch = (function(){
+                            if (!status) return true;
+                            const aliases = VEHICLE_STATUS_ALIASES[status] || [status];
+                            return aliases.some(a => vstatus.includes(a));
+                        })();
+                        return (id === '' || (v.id || '').includes(id)) &&
+                               (route === '' || (v.routeId || '').includes(route)) &&
+                               statusMatch;
+                    });
                     renderVehicleTable(matched);
-                }).catch(err => { console.error('fetchVehicles failed', err); renderVehicleTable([]); });
+                });
                 return;
             }
         } catch (e) {
@@ -840,7 +1026,8 @@ function filterCar() {
         }
     }
 
-    data = normalizeVehicles(data);
+    // 如果无法调用后端，则使用本地静态数据作为最终回退
+    const data = normalizeVehicles(Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(window.vehiclesData) ? window.vehiclesData : []));
     // 支持状态别名匹配（例如页面上的“在途”/“配送中”不同表述）
     const VEHICLE_STATUS_ALIASES = {
         '配送中': ['配送中', '配送进行中', '运输中', '派送中', '在途'],
@@ -900,7 +1087,7 @@ function renderRoutes(list) {
     }
 
     // helper to find vehicles assigned to route
-    const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+    const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
 
     list.forEach(r => {
         const tr = document.createElement('tr');
@@ -941,14 +1128,39 @@ function renderRoutes(list) {
 // 规范化车辆数据：支持 map 或数组项
 function normalizeVehicles(src) {
     if (!src) return [];
+    // helper: 将 ISO/UTC 时间字符串转换为北京时间（东八区）并格式化为 `YYYY-MM-DD HH:mm:ss`
+    function utcToBeijing(iso) {
+        if (!iso) return '';
+        try {
+            const d = new Date(iso);
+            if (isNaN(d)) return iso;
+            // 取得自纪元以来的毫秒数（UTC），加上 8 小时
+            const beijingMs = d.getTime() + 8 * 3600 * 1000;
+            const b = new Date(beijingMs);
+            // 使用 UTC 方法读取，这样不会再被本机时区影响，得到的 UTC 分量即为北京时间分量
+            const Y = b.getUTCFullYear();
+            const M = String(b.getUTCMonth() + 1).padStart(2, '0');
+            const D = String(b.getUTCDate()).padStart(2, '0');
+            const h = String(b.getUTCHours()).padStart(2, '0');
+            const m = String(b.getUTCMinutes()).padStart(2, '0');
+            const s = String(b.getUTCSeconds()).padStart(2, '0');
+            return `${Y}-${M}-${D} ${h}:${m}:${s}`;
+        } catch (e) {
+            return iso;
+        }
+    }
     if (Array.isArray(src)) return src.map(item => ({
         id: item.id || item.vehicleId || item.carId || '',
+        plateNumber: item.plateNumber || item.plate || '',
         type: item.type || item.vehicleType || '',
         status: item.status || item.state || '',
-        capacity: item.capacity || item.loadCapacity || '',
-        battery: item.battery || item.batteryLevel || '',
+        capacity: item.capacity || item.totalCapacity || item.loadCapacity || '',
+        totalCapacity: item.totalCapacity || item.capacity || '',
+        battery: item.battery || item.batteryInfo || item.batteryLevel || '',
         routeId: item.routeId || item.route || '',
-        createdAt: item.createdAt || item.addedAt || ''
+        // 将后端返回的 UTC 时间字符串转换为北京时间并格式化
+        createdAt: formatTimeForDisplay(item.createdAt || item.addedAt || item.CreatedAt || ''),
+        updatedAt: formatTimeForDisplay(item.updatedAt || item.updatedAt || item.UpdatedAt || '')
     }));
     // 如果是对象 map：将其 values 转为数组
     if (typeof src === 'object') {
@@ -956,12 +1168,14 @@ function normalizeVehicles(src) {
             const item = src[k] || {};
             return {
                 id: item.id || k,
+                plateNumber: item.plateNumber || item.plate || '',
                 type: item.type || '',
                 status: item.status || '',
-                capacity: item.capacity || '',
-                battery: item.battery || '',
-                routeId: item.routeId || '' ,
-                createdAt: item.createdAt || ''
+                capacity: item.capacity || item.totalCapacity || '',
+                totalCapacity: item.totalCapacity || item.capacity || '',
+                battery: item.battery || item.batteryInfo || '',
+                routeId: item.routeId || item.route || '' ,
+                createdAt: formatTimeForDisplay(item.createdAt || item.CreatedAt || '')
             };
         });
     }
@@ -1490,7 +1704,7 @@ function filterStation() {
         // helper: render vehicles rows for a route using window.vehiclesData
         function renderVehiclesForRoute(routeId, routeObj){
             try{
-                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
                 const assigned = (routeObj && Array.isArray(routeObj.vehicles)) ? routeObj.vehicles : [];
                 if (!assigned || assigned.length === 0) return '<tr><td colspan="7" class="no-data">暂无车辆</td></tr>';
                 return assigned.map(vId => {
@@ -1588,7 +1802,7 @@ function filterStation() {
                 // try to append a new vehicle row into the route's vehicle table
                 const tbody = document.getElementById('veh-tbody-' + routeId);
                 const span = document.getElementById('veh-count-' + routeId);
-                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []);
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
                 // create a synthetic id for demo if no actual vehicle available
                 const newId = 'NEW' + String(Math.floor(Math.random()*9000)+1000);
                 // choose first unassigned vehicle from window.vehiclesData not already in the table

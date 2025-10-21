@@ -5,31 +5,6 @@ package types
 
 import "time"
 
-type AnalyticsOverviewResp struct {
-	OrderCount        TimeSeries              `json:"orderCount"`
-	OrderAmount       TimeSeries              `json:"orderAmount"`
-	VehicleUtil       TimeSeries              `json:"vehicleUtil"`
-	DeliveryEff       TimeSeries              `json:"deliveryEff"`
-	EfficiencyCompare EfficiencyCompareSeries `json:"efficiencyCompare"`
-	Ratings           RatingsSeries           `json:"ratings"`
-	Complaints        TimeSeries              `json:"complaints"`
-}
-
-type AnalyticsReq struct {
-	StartDate   string `json:"startDate"`            // 可选，格式 yyyy-mm-dd 或 RFC3339
-	EndDate     string `json:"endDate"`              // 可选
-	GroupBy     string `json:"groupBy"`              // 可选：day|week|month
-	RangeDays   int    `json:"rangeDays,optional"`   // 可选，优先级低于 start/end
-	Region      string `json:"region,optional"`      // 可选：按区域过滤
-	VehicleType string `json:"vehicleType,optional"` // 可选：按车型过滤
-}
-
-type EfficiencyCompareSeries struct {
-	Dates    []string  `json:"dates"`
-	SmallVan []float64 `json:"smallVan"`
-	LargeVan []float64 `json:"largeVan"`
-}
-
 type FixedHeader struct {
 	StartByte    byte   `json:"startByte"`    // 标识位：固定为 0xF2
 	DataLength   uint32 `json:"dataLength"`   // 数据段长度：[0..4294967296]，表示当前报文中数据段内容所占字节数，单位：字节，最多描述 4GB 数据
@@ -88,7 +63,7 @@ type VehicleInfo struct {
 	Id           string `json:"id"`
 	PlateNumber 	string `json:"plateNumber"`
 	Type        	string `json:"type"`
-	TotalCapacity	string `json:"TotalCapacity"`
+	TotalCapacity	string `json:"totalCapacity"` // 总容量（字符串描述）
 	Battery	     string `json:"battery"`
 	Route   	    string `json:"route"`
 	Speed       	string `json:"speed"`
@@ -101,6 +76,11 @@ type VehicleInfo struct {
 
 type VehicleListResp struct {
 	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+// ResultResp 通用操作结果，用于返回简单的 OK/失败消息
+type ResultResp struct {
+	Result string `json:"result"`
 }
 
 // CreateVehicleReq 表示创建车辆静态信息的请求体

@@ -278,8 +278,12 @@
 
     // helpers to read globals declared with const/let (which may not be on window)
     function getVehiclesMap(){
+        // 优先使用运行时从后端拉取并缓存到 window.vehiclesData（首选）
+        if (typeof window !== 'undefined' && Array.isArray(window.vehiclesData) && window.vehiclesData.length > 0) return window.vehiclesData;
+        // 回退到临时私有静态副本 window._vehiclesData（仅作离线/回退用）
+        if (typeof window !== 'undefined' && Array.isArray(window._vehiclesData) && window._vehiclesData.length > 0) return window._vehiclesData;
+        // 兼容旧代码中可能存在的局部 vehiclesData 变量（最后回退）
         if (typeof vehiclesData !== 'undefined') return vehiclesData;
-        if (typeof window !== 'undefined' && window.vehiclesData) return window.vehiclesData;
         return {};
     }
 

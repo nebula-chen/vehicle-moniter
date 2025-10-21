@@ -15,21 +15,6 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
-				Method:  http.MethodGet,
-				Path:    "/api/analytics/order_amount",
-				Handler: HandleAnalyticsOrderAmountHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/analytics/order_count",
-				Handler: HandleAnalyticsOrderCountHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodPost,
-				Path:    "/api/analytics/overview",
-				Handler: HandleAnalyticsOverviewHandler(serverCtx),
-			},
-			{
 				Method:  http.MethodPost,
 				Path:    "/api/vehicle/gettrajectory",
 				Handler: HandleGetTrajectoryHandler(serverCtx),
@@ -46,13 +31,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicles/list",
+				Path:    "/api/vehicles/statelist",
 				Handler: HandleVehiclesListHandler(serverCtx),
 			},
-			// 车辆静态信息 CRUD
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicles",
+				Path:    "/api/vehicles/staticlist",
 				Handler: HandleListVehiclesHandler(serverCtx),
 			},
 			{

@@ -35,6 +35,7 @@ func (l *HandleListVehiclesLogic) HandleListVehicles() (*types.VehicleListResp, 
 	for _, r := range rows {
 		vi := types.VehicleInfo{
 			Id:            r["vehicleId"].(string),
+			PlateNumber:   r["plateNumber"].(string),
 			Type:          r["type"].(string),
 			TotalCapacity: r["totalCapacity"].(string),
 			Battery:       r["batteryInfo"].(string),
@@ -43,6 +44,7 @@ func (l *HandleListVehiclesLogic) HandleListVehicles() (*types.VehicleListResp, 
 			Lat:           0,
 			Status:        r["status"].(string),
 			Route:         r["routeId"].(string),
+			CreatedAt:     r["createdAt"].(string),
 			UpdatedAt:     r["updatedAt"].(string),
 		}
 		resp.Vehicles = append(resp.Vehicles, vi)
