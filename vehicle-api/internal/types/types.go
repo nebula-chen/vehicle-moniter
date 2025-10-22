@@ -3,7 +3,14 @@
 
 package types
 
-import "time"
+type CreateVehicleReq struct {
+	PlateNumber   string `json:"plateNumber,optional"` // 车牌号
+	Type          int    `json:"type"`                 // 必填, 车型: 0 普通车, 1 大型车, 2 冷藏车, 3 冷冻车
+	TotalCapacity int    `json:"totalCapacity"`        // 必填, 总容量，单位: 立方米 m^3
+	BatteryInfo   int    `json:"batteryInfo"`          // 必填, 电池信息, 单位: %
+	RouteId       string `json:"routeId,optional"`     // 所属线路编号
+	Extra         string `json:"extra,optional"`       // 可选扩展字段
+}
 
 type FixedHeader struct {
 	StartByte    byte   `json:"startByte"`    // 标识位：固定为 0xF2
@@ -30,27 +37,18 @@ type Position2D struct {
 }
 
 type PositionPoint struct {
-	Timestamp string `json:"timestamp"` // RFC3339 UTC timestamp
+	Timestamp string `json:"timestamp"` // RFC3339 UTC 时间戳
 	Longitude uint32 `json:"longitude"`
 	Latitude  uint32 `json:"latitude"`
 }
 
-type RatingsSeries struct {
-	Dates []string `json:"dates"`
-	Good  []int    `json:"good"`
-	Mid   []int    `json:"mid"`
-	Bad   []int    `json:"bad"`
-}
-
-type TimeSeries struct {
-	Dates  []string  `json:"dates"`
-	Values []float64 `json:"values"`
-	Total  float64   `json:"total"`
+type ResultResp struct {
+	Result string `json:"result"`
 }
 
 type TrajectoryReq struct {
 	VehicleId string `json:"vehicleId"` // 必填
-	StartUtc  string `json:"startUtc"`  // RFC3339 UTC 时间戳，例如 2006-01-02T15:04:05Z
+	StartUtc  string `json:"startUtc"`  // RFC3339 UTC 时间戳, e.g. 2006-01-02T15:04:05Z
 	EndUtc    string `json:"endUtc"`    // RFC3339 UTC 时间戳
 }
 
@@ -58,82 +56,15 @@ type TrajectoryResp struct {
 	Trajectory []PositionPoint `json:"trajectory"`
 }
 
-// 车辆相关 API 类型
-type VehicleInfo struct {
-	Id           string `json:"id"`
-	PlateNumber 	string `json:"plateNumber"`
-	Type        	string `json:"type"`
-	TotalCapacity	string `json:"totalCapacity"` // 总容量（字符串描述）
-	Battery	     string `json:"battery"`
-	Route   	    string `json:"route"`
-	Speed       	string `json:"speed"`
-	Lng       		int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
-	Lat       		int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
-	Status    		string `json:"status"`
-	CreatedAt 		string `json:"createdAt"` // RFC3339 UTC 时间
-	UpdatedAt 		string `json:"updatedAt"` // RFC3339 UTC 时间
-}
-
-type VehicleListResp struct {
-	Vehicles []VehicleInfo `json:"vehicles"`
-}
-
-// ResultResp 通用操作结果，用于返回简单的 OK/失败消息
-type ResultResp struct {
-	Result string `json:"result"`
-}
-
-// CreateVehicleReq 表示创建车辆静态信息的请求体
-type CreateVehicleReq struct {
-	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID
-	PlateNumber   string `json:"plateNumber"`   // 车牌号
-	Type          string `json:"type"`          // 车型
-	TotalCapacity string `json:"totalCapacity"` // 车辆总容量（可为字符串描述）
-	BatteryInfo   string `json:"batteryInfo"`   // 电池信息（电量/型号等）
-	RouteId       string `json:"routeId"`       // 所属线路编号
-	Status        string `json:"status"`        // 车辆状态（空闲/配送中/充电中/异常等）
-	Extra         string `json:"extra,optional"`// 可选扩展字段（JSON 字符串）
-}
-
-// UpdateVehicleReq 表示更新车辆信息的请求体（vehicleId 为必填）
 type UpdateVehicleReq struct {
-	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID（必填）
-	PlateNumber   *string `json:"plateNumber,optional"`   // 车牌号，指针表示可选
-	Type          *string `json:"type,optional"`          // 车型
-	TotalCapacity *string `json:"totalCapacity,optional"` // 总容量
-	BatteryInfo   *string `json:"batteryInfo,optional"`   // 电池信息
-	RouteId       *string `json:"routeId,optional"`       // 所属线路
-	Status        *string `json:"status,optional"`        // 状态
-	Extra         *string `json:"extra,optional"`// 可选扩展字段（JSON 字符串）
-}
-
-// VehicleDetailResp 表示单辆车的详情响应
-type VehicleDetailResp struct {
-	Vehicle VehicleInfo        `json:"vehicle"`
-	Extra   map[string]string  `json:"extra,omitempty"`
-}
-
-type VehicleSummaryResp struct {
-	Total    int `json:"total"`
-	InTransit int `json:"inTransit"`
-	Idle     int `json:"idle"`
-	Charging int `json:"charging"`
-	Abnormal int `json:"abnormal"`
-}
-
-// TaskRecord 表示一次车辆任务（从起点到终点）的记录，持久化到关系型数据库以便留痕
-type TaskRecord struct {
-	ID        int64     `json:"id" db:"id"`
-	VehicleId string    `json:"vehicleId" db:"vehicle_id"`
-	TaskId    string    `json:"taskId" db:"task_id"`
-	StartTime time.Time `json:"startTime" db:"start_time"`
-	EndTime   time.Time `json:"endTime" db:"end_time"`
-	StartLon  uint32    `json:"startLon" db:"start_lon"`
-	StartLat  uint32    `json:"startLat" db:"start_lat"`
-	EndLon    uint32    `json:"endLon" db:"end_lon"`
-	EndLat    uint32    `json:"endLat" db:"end_lat"`
-	Status    string    `json:"status" db:"status"` // e.g. completed/aborted
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	VehicleId     string  `json:"vehicleId"` // 必填
+	PlateNumber   *string `json:"plateNumber,optional"`
+	Type          *int    `json:"type,optional"`
+	TotalCapacity *int    `json:"totalCapacity,optional"`
+	BatteryInfo   *int    `json:"batteryInfo,optional"`
+	RouteId       *string `json:"routeId,optional"`
+	Status        *string `json:"status,optional"`
+	Extra         *string `json:"extra,optional"`
 }
 
 type VEH2CLOUD_STATE struct {
@@ -161,4 +92,36 @@ type VEH2CLOUD_STATE struct {
 	DestLocation    Position2D   `json:"destLocation"`    // 目的地位置：车辆当前驾驶任务的终点位置，POSITION2D 中经度或纬度为异常值时，表示未获取到目的地位置
 	PassPointsNum   byte         `json:"passPointsNum"`   // 途经点数量: [0..255]，0 表示没有途径点，不发送途经点字段，其他取值都均表示
 	PassPoints      []Position2D `json:"passPoints"`      // 途经点: N 个途经点，其中 N 为途径点数量
+}
+
+type VehicleDetailResp struct {
+	Vehicle VehicleInfo       `json:"vehicle"`
+	Extra   map[string]string `json:"extra,omitempty"`
+}
+
+type VehicleInfo struct {
+	Id            string `json:"id"`
+	PlateNumber   string `json:"plateNumber"`
+	Type          string `json:"type"`
+	TotalCapacity string `json:"totalCapacity"` // 总容量（字符串描述）
+	Battery       string `json:"battery"`
+	Route         string `json:"route"`
+	Speed         string `json:"speed"`
+	Lng           int64  `json:"lng"` // 经度：乘以 1e7，遵循 Position 编码
+	Lat           int64  `json:"lat"` // 纬度：乘以 1e7，遵循 Position 编码
+	Status        string `json:"status"`
+	CreatedAt     string `json:"createdAt"` // RFC3339 UTC 时间
+	UpdatedAt     string `json:"updatedAt"` // RFC3339 UTC 时间
+}
+
+type VehicleListResp struct {
+	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+type VehicleSummaryResp struct {
+	Total     int `json:"total"`
+	InTransit int `json:"inTransit"`
+	Idle      int `json:"idle"`
+	Charging  int `json:"charging"`
+	Abnormal  int `json:"abnormal"`
 }

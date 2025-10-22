@@ -73,81 +73,82 @@ function filterOrders() {
     };
     const tableBody = document.getElementById('table-body');
 
-    // 使用页面上可用的 orders 数据源：优先页面作用域的 `orders`（data.js 中可能使用 const/let 声明），
-    // 然后兼容 window.orders、window.dataOrders、window.dataOrdersList，最终回退到空数组
-    let ordersSrc = [];
-    try {
-        if (typeof orders !== 'undefined' && Array.isArray(orders)) {
-            ordersSrc = orders;
-        } else if (Array.isArray(window.orders)) {
-            ordersSrc = window.orders;
-        } else if (Array.isArray(window.dataOrders)) {
-            ordersSrc = window.dataOrders;
-        } else if (Array.isArray(window.dataOrdersList)) {
-            ordersSrc = window.dataOrdersList;
-        }
-    } catch (e) {
-        ordersSrc = Array.isArray(window.orders) ? window.orders : (Array.isArray(window.dataOrders) ? window.dataOrders : (Array.isArray(window.dataOrdersList) ? window.dataOrdersList : []));
-    }
+    // 现在改为使用后端接口获取订单数据，禁用页面内静态 data.js
+    // 后端接口: GET /api/order/list
+    // 根据前端的筛选条件，构造查询参数
+    const params = new URLSearchParams();
+    if (orderId) params.append('orderId', orderId);
+    if (addressee) params.append('addressee', addressee);
+    if (phone) params.append('phone', phone);
+    if (address) params.append('address', address);
+    if (point) params.append('stationId', point);
+    if (status) params.append('status', status);
 
-    // 兼容 data.js 中的订单字段名：sender, senderPhone, senderAddress, addressee, addresseePhone, address, warehouseId, vehicleId, gridMemberId
-    const matched = Array.isArray(ordersSrc) ? ordersSrc.filter(order => {
-        const o = order || {};
-        const matchesOrderId = orderId === '' || (o.id || '').includes(orderId);
-        // 合并可能作为姓名的字段，优先匹配收/寄件人相关字段，不把其它非姓名字段误判为姓名
-        const nameCandidates = [o.addressee, o.receiver, o.addresseeName, o.receiverName, o.sender, o.senderName]
-            .filter(v => v !== undefined && v !== null)
-            .map(v => String(v))
-            .join(' ');
-        const matchesAddressee = addressee === '' || nameCandidates.includes(addressee);
-        const matchesPhone = phone === '' || ((o.addresseePhone || o.receiverPhone || o.senderPhone || o.phone || '') + '').includes(phone);
-        const matchesAddress = address === '' || ((o.address || o.receiverAddress || o.senderAddress || '') + '').includes(address);
-        const matchesPoint = point === '' || ((o.warehouseId || o.warehouse || o.point || '') + '').includes(point);
-        const matchesStatus = (function(){
-            if (!status) return true;
-            const ostat = (o.status || '') + '';
-            const aliases = STATUS_ALIASES[status] || [status];
-            return aliases.some(a => ostat.includes(a));
-        })();
-        return matchesOrderId && matchesAddressee && matchesPhone && matchesAddress && matchesPoint && matchesStatus;
-    }) : [];
-    if (tableBody) {
-        tableBody.innerHTML = '';
-        if (!matched || matched.length === 0) {
-            const tr = document.createElement('tr');
-            tr.className = 'table-empty';
-            tr.innerHTML = '<td colspan="10">暂无匹配记录。</td>';
-            tableBody.appendChild(tr);
-            return;
-        }
-        matched.forEach(order => {
-            const tr = document.createElement('tr');
-            tr.dataset.id = order.id || '';
-            tr.innerHTML = `
-                <td>${order.id || ''}</td>
-                <td>${order.type || ''}</td>
-                <td>${order.status != '已签收' ? order.status : order.status + '<br>' + order.endTime}</td>
-                <td>${order.sender || order.senderName || ''}</td>
-                <td>${order.senderPhone + '<br>' + order.senderAddress}</td>
-                <td>${order.addressee || order.receiver || ''}</td>
-                <td>${order.addresseePhone + '<br>' + order.address}</td>
-                <td>${(order.warehouseId || order.warehouse) ? `<a href="stations-manage.html?station=${encodeURIComponent(order.warehouseId||order.warehouse)}" class="link-to-station" target="_self">${order.warehouseId || order.warehouse}</a>` : '--'}</td>
-                <td>${order.routeId ? `<a href="route-manage.html?route=${encodeURIComponent(order.routeId)}" class="link-to-route" target="_self">${order.routeId}</a>` : ''}</td>
-                <td>${(order.vehicleId || order.carId) ? `<a href="car-screen.html?vehicle=${encodeURIComponent(order.vehicleId||order.carId)}" class="link-to-map" target="_blank" rel="noopener">${order.vehicleId || order.carId}</a>` : ''}</td>
-                <td>${order.gridMemberId || order.courierId || '--'}</td>
-            `;
-            tr.addEventListener('click', () => showDetail(order));
-            // prevent row click when clicking station/map/route links
-            const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
-            links.forEach(a => {
-                a.addEventListener('click', function(evt){
-                    evt.stopPropagation();
-                    // allow default navigation for station links (same tab) or map links (new tab)
+    // 显示加载占位
+    if (tableBody) tableBody.innerHTML = '<tr class="table-loading"><td colspan="11">加载中…</td></tr>';
+
+    fetch('/api/order/list?' + params.toString(), { method: 'GET', cache: 'no-store' })
+        .then(resp => {
+            if (!resp.ok) throw new Error('网络错误: ' + resp.status);
+            return resp.json();
+        })
+        .then(json => {
+            // 期望后端返回 { code:0, msg:'', data: { ordersList: [...], total: N } } 或者直接 { ordersList: [...], total: N }
+            let list = [];
+            if (!json) list = [];
+            else if (Array.isArray(json.ordersList)) list = json.ordersList;
+            else if (json.data && Array.isArray(json.data.ordersList)) list = json.data.ordersList;
+            else if (Array.isArray(json)) list = json;
+
+            tableBody.innerHTML = '';
+            if (!list || list.length === 0) {
+                const tr = document.createElement('tr');
+                tr.className = 'table-empty';
+                tr.innerHTML = '<td colspan="11">暂无匹配记录。</td>';
+                tableBody.appendChild(tr);
+                return;
+            }
+
+            // 渲染后端的 OrderInfoResp 列表
+            list.forEach(order => {
+                const tr = document.createElement('tr');
+                // 后端字段名可能为 orderId
+                const oid = order.orderId || order.id || '';
+                tr.dataset.id = oid;
+                const statusText = order.status || '';
+                const endTimeDisplay = order.endTime ? '<br>' + formatTimeForDisplay(order.endTime) : '';
+                tr.innerHTML = `
+                    <td>${escapeHtml(oid)}</td>
+                    <td>${escapeHtml(order.type || '')}</td>
+                    <td>${escapeHtml(statusText)}${statusText === '已完成' ? endTimeDisplay : ''}</td>
+                    <td>${escapeHtml(order.sender || '')}</td>
+                    <td>${escapeHtml((order.senderPhone || '') + '') + '<br>' + escapeHtml(order.senderAddress || '')}</td>
+                    <td>${escapeHtml(order.addressee || '')}</td>
+                    <td>${escapeHtml((order.addresseePhone || '') + '') + '<br>' + escapeHtml(order.address || '')}</td>
+                    <td>${(order.passStations && order.passStations.length>0) ? escapeHtml(order.passStations[0]) : (order.stationId || order.warehouseId || '--')}</td>
+                    <td>${order.passRoute && order.passRoute.length>0 ? `<a href="route-manage.html?route=${encodeURIComponent(order.passRoute[0])}" class="link-to-route" target="_self">${escapeHtml(order.passRoute[0])}</a>` : (order.routeId ? `<a href="route-manage.html?route=${encodeURIComponent(order.routeId)}" class="link-to-route" target="_self">${escapeHtml(order.routeId)}</a>` : '--')}</td>
+                    <td>${order.passVehicle && order.passVehicle.length>0 ? `<a href="car-screen.html?vehicle=${encodeURIComponent(order.passVehicle[0])}" class="link-to-map" target="_blank" rel="noopener">${escapeHtml(order.passVehicle[0])}</a>` : (order.vehicleId ? `<a href="car-screen.html?vehicle=${encodeURIComponent(order.vehicleId)}" class="link-to-map" target="_blank" rel="noopener">${escapeHtml(order.vehicleId)}</a>` : '--')}</td>
+                    <td>${escapeHtml((order.passGridMember && order.passGridMember[0]) || order.gridMemberId || order.courierId || '--')}</td>
+                `;
+                tr.addEventListener('click', () => showDetail(order));
+                // prevent row click when clicking station/map/route links
+                const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
+                links.forEach(a => {
+                    a.addEventListener('click', function(evt){ evt.stopPropagation(); });
                 });
+                tableBody.appendChild(tr);
             });
-            tableBody.appendChild(tr);
+        })
+        .catch(err => {
+            console.error('fetch orders failed', err);
+            if (tableBody) {
+                tableBody.innerHTML = '';
+                const tr = document.createElement('tr');
+                tr.className = 'table-empty';
+                tr.innerHTML = '<td colspan="11">获取订单数据失败：' + escapeHtml(err.message || '') + '</td>';
+                tableBody.appendChild(tr);
+            }
         });
-    }
 }
 
 // 网格员筛选
@@ -711,7 +712,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnAdd = document.getElementById('btn-add');
     if (btnAdd) btnAdd.addEventListener('click', () => {
-        // 对不同页面可以扩展具体动作
+        // 针对车辆归档页面，打开创建车辆模态
+        if (page === 'car-manage') {
+            const modal = document.getElementById('modal-create-vehicle');
+            if (modal) {
+                modal.style.display = 'block';
+                modal.setAttribute('aria-hidden', 'false');
+            } else {
+                alert('未找到创建车辆模态');
+            }
+            return;
+        }
+        // 对其他页面保留占位提示
         if (page === 'gridmember-profile') alert('打开新增网格员弹窗（占位）');
         else if (page === 'car-tasks') alert('打开新增任务弹窗（占位）');
         else alert('打开新增条目弹窗（占位）');
@@ -934,13 +946,20 @@ function renderVehicleTable(list) {
     list.forEach(v => {
         const tr = document.createElement('tr');
         tr.dataset.id = v.id || '';
+        if (v.type != '' || v.type != null || v.type != undefined) {
+            if (v.type == 0) typeText = '普通车';
+            else if (v.type == 1) typeText = '大型车';
+            else if (v.type == 2) typeText = '冷藏车';
+            else if (v.type == 3) typeText = '冷冻车';
+            else typeText = '未知类型';
+        };
         tr.innerHTML = `
             <td>${v.id || ''}</td>
-            <td>${v.type || ''}</td>
+            <td>${typeText}</td>
             <td>${v.status || ''}</td>
-            <td>${v.capacity || v.totalCapacity || v.total_capacity || ''}</td>
-            <td>${v.battery || v.batteryInfo || ''}</td>
-            <td>${v.routeId || v.route || ''}</td>
+            <td>${(v.capacity || v.totalCapacity || v.total_capacity || '') + "m^3"}</td>
+            <td>${(v.battery || v.batteryInfo || '') + "%"}</td>
+            <td>${v.routeId || v.route || '--'}</td>
             <td>${formatTimeForDisplay(v.createdAt || v.created_at || v.CreatedAt || '')}</td>
             <td><button class="btn-monitor" data-vehicle="${v.id || ''}" title="实时监控">实时监控</button></td>
         `;
@@ -1409,6 +1428,118 @@ function renderTabContent(item) {
 
     return headerHtml + section;
 }
+
+// ----------------- 新增车辆：前端表单处理与后端联通 -----------------
+// 关闭创建车辆模态
+function closeCreateVehicleModal() {
+    const modal = document.getElementById('modal-create-vehicle');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+// 打开创建车辆模态（外部可调用）
+function openCreateVehicleModal() {
+    const modal = document.getElementById('modal-create-vehicle');
+    if (!modal) return;
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+    // 自动聚焦到车辆 ID 字段，提升可用性
+    // 聚焦到第一个输入框（车牌号）以提升可用性
+    try { const el = document.getElementById('cv-plateNumber') || document.getElementById('cv-type'); if (el) { setTimeout(() => el.focus(), 50); } } catch(e) {}
+}
+
+// 辅助：显示短暂提示（页面内）
+function showToast(msg, duration = 3000) {
+    // 简单实现：使用 alert 作为回退
+    try {
+        const t = document.createElement('div');
+        t.className = 'simple-toast';
+        t.textContent = msg;
+        Object.assign(t.style, {position:'fixed',left:'50%',bottom:'20px',transform:'translateX(-50%)',background:'#333',color:'#fff',padding:'8px 12px',borderRadius:'4px',zIndex:2000});
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), duration);
+    } catch (e) {
+        alert(msg);
+    }
+}
+
+// 处理表单提交：构造请求并 POST 到后端 /api/vehicles
+function bindCreateVehicleForm() {
+    const form = document.getElementById('createVehicleForm');
+    const modal = document.getElementById('modal-create-vehicle');
+    if (!form || !modal) return;
+
+    // 关闭按钮
+    const btnClose = document.getElementById('modal-close');
+    if (btnClose) btnClose.addEventListener('click', closeCreateVehicleModal);
+    const btnCancel = document.getElementById('cv-cancel');
+    if (btnCancel) btnCancel.addEventListener('click', closeCreateVehicleModal);
+    // 点击遮罩关闭
+    const backdrop = document.getElementById('modal-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeCreateVehicleModal);
+    // 按 ESC 关闭模态
+    document.addEventListener('keydown', function onEsc(e){ if (e.key === 'Escape') { closeCreateVehicleModal(); } });
+
+    form.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        // 收集表单字段（与 service.api 中 CreateVehicleReq 对应）
+        // 注意：vehicleId 由后端自动生成，前端不发送 vehicleId
+        const plateNumber = (document.getElementById('cv-plateNumber') && document.getElementById('cv-plateNumber').value.trim()) || '';
+        const typeRaw = (document.getElementById('cv-type') && document.getElementById('cv-type').value) || '';
+        const totalCapacityRaw = (document.getElementById('cv-totalCapacity') && document.getElementById('cv-totalCapacity').value.trim()) || '';
+        const batteryInfoRaw = (document.getElementById('cv-batteryInfo') && document.getElementById('cv-batteryInfo').value.trim()) || '';
+        const routeId = (document.getElementById('cv-routeId') && document.getElementById('cv-routeId').value.trim()) || '';
+        const extra = (document.getElementById('cv-extra') && document.getElementById('cv-extra').value.trim()) || '';
+
+        // 必填校验并转换为整数：type、totalCapacity、batteryInfo
+        const typeInt = parseInt(typeRaw, 10);
+        const totalCapacityInt = parseInt(totalCapacityRaw, 10);
+        const batteryInfoInt = parseInt(batteryInfoRaw, 10);
+        if (isNaN(typeInt)) { showToast('请选择车型（必填）'); if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; } return; }
+        if (isNaN(totalCapacityInt)) { showToast('请输入总容量（整数，必填）'); if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; } return; }
+        if (isNaN(batteryInfoInt)) { showToast('请输入电池信息（整数 0-100，必填）'); if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; } return; }
+
+        // 构造请求体（整数字段按后端定义）
+        const payload = {
+            type: typeInt,
+            totalCapacity: totalCapacityInt,
+            batteryInfo: batteryInfoInt,
+        };
+        if (plateNumber) payload.plateNumber = plateNumber;
+        if (routeId) payload.routeId = routeId;
+        if (extra) payload.extra = extra;
+
+        // 禁用提交按钮防止重复提交
+        const submitBtn = document.getElementById('cv-submit');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '提交中…'; }
+
+        fetch('/api/vehicles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            cache: 'no-store'
+        }).then(resp => {
+            if (!resp.ok) return resp.text().then(t => { throw new Error(t || ('HTTP ' + resp.status)); });
+            return resp.json().catch(() => ({}));
+        }).then(json => {
+            // 解析后端返回，service.api 里返回 ResultResp（{ result: string }）
+            closeCreateVehicleModal();
+            showToast('创建成功');
+            // 尝试刷新车辆列表：若存在 fetchVehicles 或 filterCar 则调用
+            try { if (typeof fetchVehicles === 'function') fetchVehicles().then(remote => { window.vehiclesData = Array.isArray(remote) ? remote : (remote && Array.isArray(remote.vehicles) ? remote.vehicles : []); renderVehicleTable(normalizeVehicles(window.vehiclesData)); }).catch(()=>{ if (typeof filterCar === 'function') filterCar(); }); else if (typeof filterCar === 'function') filterCar(); } catch(e) { console.warn('刷新车辆列表失败', e); }
+        }).catch(err => {
+            console.error('创建车辆失败', err);
+            showToast('创建车辆失败：' + (err && err.message ? err.message : String(err)));
+        }).finally(() => {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; }
+        });
+    });
+}
+
+// 尝试立即绑定创建表单（若 DOM 已加载）
+try { document.addEventListener('DOMContentLoaded', bindCreateVehicleForm); } catch(e) { setTimeout(bindCreateVehicleForm, 200); }
+
 
 // 在 stations-io 页面使用的筛选函数：查找 WAREHOUSES/STORES 并创建/切换标签页
 function filterStation() {

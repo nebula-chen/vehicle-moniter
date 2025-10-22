@@ -46,11 +46,13 @@ func (d *MySQLDao) BatchInsertRecords(records []struct {
 }
 
 // InsertVehicle 插入一条 vehicle_list 记录（静态设备信息）
-func (d *MySQLDao) InsertVehicle(vehicleId, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status string, extraJSON string) error {
+// 注意：vtype、totalCapacity、batteryInfo 使用 int 类型
+// extra 字段为纯文本备注，不再存储为 JSON
+func (d *MySQLDao) InsertVehicle(vehicleId, plateNumber string, vtype, totalCapacity, batteryInfo int, routeId, status string, extra string) error {
 	if d == nil || d.DB == nil {
 		return fmt.Errorf("mysql dao not initialized")
 	}
-	_, err := d.DB.Exec(`INSERT INTO vehicle_list (vehicle_id, plate_number, type, total_capacity, battery_info, route_id, status, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, vehicleId, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status, extraJSON)
+	_, err := d.DB.Exec(`INSERT INTO vehicle_list (vehicle_id, plate_number, type, total_capacity, battery_info, route_id, status, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, vehicleId, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status, extra)
 	return err
 }
 
@@ -61,18 +63,34 @@ func (d *MySQLDao) GetVehicleByID(vehicleId string) (map[string]interface{}, err
 	}
 	row := d.DB.QueryRow(`SELECT id, vehicle_id, plate_number, type, total_capacity, battery_info, route_id, status, extra, created_at, updated_at FROM vehicle_list WHERE vehicle_id = ?`, vehicleId)
 	var id int
-	var vid, plate, vtype, cap, battery, route, status, extra string
+	var vid, plate, route, status, extra string
+	var vtype sql.NullInt64
+	var cap sql.NullInt64
+	var battery sql.NullInt64
 	var createdAt, updatedAt time.Time
 	if err := row.Scan(&id, &vid, &plate, &vtype, &cap, &battery, &route, &status, &extra, &createdAt, &updatedAt); err != nil {
 		return nil, err
+	}
+	// 将可能为 NULL 的 int 转为字符串或 0
+	typeStr := ""
+	if vtype.Valid {
+		typeStr = fmt.Sprintf("%d", vtype.Int64)
+	}
+	capStr := ""
+	if cap.Valid {
+		capStr = fmt.Sprintf("%d", cap.Int64)
+	}
+	batteryStr := ""
+	if battery.Valid {
+		batteryStr = fmt.Sprintf("%d", battery.Int64)
 	}
 	out := map[string]interface{}{
 		"id":            id,
 		"vehicleId":     vid,
 		"plateNumber":   plate,
-		"type":          vtype,
-		"totalCapacity": cap,
-		"batteryInfo":   battery,
+		"type":          typeStr,
+		"totalCapacity": capStr,
+		"batteryInfo":   batteryStr,
 		"routeId":       route,
 		"status":        status,
 		"extra":         extra,
@@ -83,11 +101,12 @@ func (d *MySQLDao) GetVehicleByID(vehicleId string) (map[string]interface{}, err
 }
 
 // UpdateVehicle 更新 vehicle_list 中的记录（只更新可变字段）
-func (d *MySQLDao) UpdateVehicle(vehicleId, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status string, extraJSON string) error {
+// extra 字段为纯文本备注，不再存储为 JSON
+func (d *MySQLDao) UpdateVehicle(vehicleId, plateNumber string, vtype, totalCapacity, batteryInfo int, routeId, status string, extra string) error {
 	if d == nil || d.DB == nil {
 		return fmt.Errorf("mysql dao not initialized")
 	}
-	_, err := d.DB.Exec(`UPDATE vehicle_list SET plate_number=?, type=?, total_capacity=?, battery_info=?, route_id=?, status=?, extra=? WHERE vehicle_id=?`, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status, extraJSON, vehicleId)
+	_, err := d.DB.Exec(`UPDATE vehicle_list SET plate_number=?, type=?, total_capacity=?, battery_info=?, route_id=?, status=?, extra=? WHERE vehicle_id=?`, plateNumber, vtype, totalCapacity, batteryInfo, routeId, status, extra, vehicleId)
 	return err
 }
 
@@ -147,18 +166,33 @@ func (d *MySQLDao) ListVehicles() ([]map[string]interface{}, error) {
 	out := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int
-		var vid, plate, vtype, cap, battery, route, status, extra string
+		var vid, plate, route, status, extra string
+		var vtype sql.NullInt64
+		var cap sql.NullInt64
+		var battery sql.NullInt64
 		var createdAt, updatedAt time.Time
 		if err := rows.Scan(&id, &vid, &plate, &vtype, &cap, &battery, &route, &status, &extra, &createdAt, &updatedAt); err != nil {
 			return nil, err
+		}
+		typeStr := ""
+		if vtype.Valid {
+			typeStr = fmt.Sprintf("%d", vtype.Int64)
+		}
+		capStr := ""
+		if cap.Valid {
+			capStr = fmt.Sprintf("%d", cap.Int64)
+		}
+		batteryStr := ""
+		if battery.Valid {
+			batteryStr = fmt.Sprintf("%d", battery.Int64)
 		}
 		out = append(out, map[string]interface{}{
 			"id":            id,
 			"vehicleId":     vid,
 			"plateNumber":   plate,
-			"type":          vtype,
-			"totalCapacity": cap,
-			"batteryInfo":   battery,
+			"type":          typeStr,
+			"totalCapacity": capStr,
+			"batteryInfo":   batteryStr,
 			"routeId":       route,
 			"status":        status,
 			"extra":         extra,

@@ -22,7 +22,6 @@ type ServiceContext struct {
 	Config       config.Config
 	WSHub        *websocket.Hub
 	Dao          *dao.InfluxDao
-	Analytics    *dao.AnalyticsDao
 	MySQLDB      *sql.DB
 	MySQLDao     *dao.MySQLDao
 	Processor    processor.Processor
@@ -44,10 +43,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		panic("InfluxDB connect error: " + err.Error())
 	}
 	ctx := &ServiceContext{
-		Config:    c,
-		WSHub:     hub,
-		Dao:       dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
-		Analytics: dao.NewAnalyticsDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
+		Config: c,
+		WSHub:  hub,
+		Dao:    dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
 	}
 
 	// 如果配置了 MySQL，则尝试建立连接并自动建表
@@ -167,12 +165,12 @@ func createVehicleListTable(db *sql.DB) error {
 		id INT AUTO_INCREMENT PRIMARY KEY,
 		vehicle_id VARCHAR(128) NOT NULL UNIQUE,
 		plate_number VARCHAR(64),
-		type VARCHAR(64),
-		total_capacity VARCHAR(64),
-		battery_info VARCHAR(255),
+		type INT,
+		total_capacity INT,
+		battery_info INT,
 		route_id VARCHAR(128),
 		status VARCHAR(64),
-		extra JSON,
+		extra TEXT, -- 备注信息，仅用于文字备注，非 JSON
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

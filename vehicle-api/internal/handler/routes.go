@@ -26,28 +26,13 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicles/summary",
-				Handler: HandleVehiclesSummaryHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/vehicles/statelist",
-				Handler: HandleVehiclesListHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/vehicles/staticlist",
-				Handler: HandleListVehiclesHandler(serverCtx),
+				Path:    "/api/vehicle/ws",
+				Handler: HandleWebSocketHandler(serverCtx),
 			},
 			{
 				Method:  http.MethodPost,
 				Path:    "/api/vehicles",
 				Handler: HandleCreateVehicleHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/vehicles/detail",
-				Handler: HandleGetVehicleHandler(serverCtx),
 			},
 			{
 				Method:  http.MethodPut,
@@ -61,8 +46,23 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicle/ws",
-				Handler: HandleWebSocketHandler(serverCtx),
+				Path:    "/api/vehicles/detail",
+				Handler: HandleGetVehicleHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/vehicles/statelist",
+				Handler: HandleVehiclesListHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/vehicles/staticlist",
+				Handler: HandleListVehiclesHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
+				Path:    "/api/vehicles/summary",
+				Handler: HandleVehiclesSummaryHandler(serverCtx),
 			},
 		},
 	)

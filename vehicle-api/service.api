@@ -70,16 +70,18 @@ type TrajectoryResp {
 
 // 车辆相关 API 类型
 type VehicleInfo {
-	Id        string `json:"id"`
-	Type      string `json:"type"`
-	Capacity  string `json:"capacity"`
-	Battery   string `json:"battery"`
-	Speed     string `json:"speed"`
-	Lng       int64  `json:"lng"`    // 经度：乘以 1e7，遵循 Position 编码
-	Lat       int64  `json:"lat"`    // 纬度：乘以 1e7，遵循 Position 编码
-	Status    string `json:"status"`
-	Route     string `json:"route"`
-	UpdatedAt string `json:"updatedAt"` // RFC3339 UTC 时间
+	Id            string `json:"id"`
+	PlateNumber   string `json:"plateNumber"`
+	Type          string `json:"type"`
+	TotalCapacity string `json:"totalCapacity"` // 总容量（字符串描述）
+	Battery       string `json:"battery"`
+	Route         string `json:"route"`
+	Speed         string `json:"speed"`
+	Lng           int64  `json:"lng"` // 经度：乘以 1e7，遵循 Position 编码
+	Lat           int64  `json:"lat"` // 纬度：乘以 1e7，遵循 Position 编码
+	Status        string `json:"status"`
+	CreatedAt     string `json:"createdAt"` // RFC3339 UTC 时间
+	UpdatedAt     string `json:"updatedAt"` // RFC3339 UTC 时间
 }
 
 type VehicleListResp {
@@ -87,11 +89,11 @@ type VehicleListResp {
 }
 
 type VehicleSummaryResp {
-	Total    int `json:"total"`
+	Total     int `json:"total"`
 	InTransit int `json:"inTransit"`
-	Idle     int `json:"idle"`
-	Charging int `json:"charging"`
-	Abnormal int `json:"abnormal"`
+	Idle      int `json:"idle"`
+	Charging  int `json:"charging"`
+	Abnormal  int `json:"abnormal"`
 }
 
 // 通用操作结果
@@ -101,23 +103,21 @@ type ResultResp {
 
 // 创建车辆请求（静态信息）
 type CreateVehicleReq {
-	VehicleId     string `json:"vehicleId"`     // 车辆唯一 ID
-	PlateNumber   string `json:"plateNumber"`   // 车牌号
-	Type          string `json:"type"`          // 车型
-	TotalCapacity string `json:"totalCapacity"` // 总容量
-	BatteryInfo   string `json:"batteryInfo"`   // 电池信息
-	RouteId       string `json:"routeId"`       // 所属线路
-	Status        string `json:"status"`        // 状态
-	Extra         string `json:"extra,optional"`// 可选扩展字段
+	PlateNumber   string `json:"plateNumber,optional"` // 车牌号
+	Type          int    `json:"type"` // 必填, 车型: 0 普通车, 1 大型车, 2 冷藏车, 3 冷冻车
+	TotalCapacity int    `json:"totalCapacity"` // 必填, 总容量，单位: 立方米 m^3
+	BatteryInfo   int    `json:"batteryInfo"` // 必填, 电池信息, 单位: %
+	RouteId       string `json:"routeId,optional"` // 所属线路编号
+	Extra         string `json:"extra,optional"` // 可选扩展字段
 }
 
 // 更新车辆请求（部分更新）
 type UpdateVehicleReq {
-	VehicleId     string  `json:"vehicleId"`     // 必填
+	VehicleId     string  `json:"vehicleId"` // 必填
 	PlateNumber   *string `json:"plateNumber,optional"`
-	Type          *string `json:"type,optional"`
-	TotalCapacity *string `json:"totalCapacity,optional"`
-	BatteryInfo   *string `json:"batteryInfo,optional"`
+	Type          *int    `json:"type,optional"`
+	TotalCapacity *int    `json:"totalCapacity,optional"`
+	BatteryInfo   *int    `json:"batteryInfo,optional"`
 	RouteId       *string `json:"routeId,optional"`
 	Status        *string `json:"status,optional"`
 	Extra         *string `json:"extra,optional"`
@@ -125,10 +125,9 @@ type UpdateVehicleReq {
 
 // 单车辆详情响应（静态 + 可选实时字段）
 type VehicleDetailResp {
-	Vehicle VehicleInfo        `json:"vehicle"`
-	Extra   map[string]string  `json:"extra,omitempty"`
+	Vehicle VehicleInfo       `json:"vehicle"`
+	Extra   map[string]string `json:"extra,omitempty"`
 }
-
 
 service vehicle-api {
 	@handler HandleWebSocket
@@ -160,6 +159,5 @@ service vehicle-api {
 
 	@handler HandleListVehicles
 	get /api/vehicles/staticlist returns (VehicleListResp)
-
 }
 

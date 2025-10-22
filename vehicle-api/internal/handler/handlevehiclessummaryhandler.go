@@ -15,8 +15,8 @@ func HandleVehiclesSummaryHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		resp, err := l.HandleVehiclesSummary()
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
-			return
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
 		}
-		httpx.OkJsonCtx(r.Context(), w, resp)
 	}
 }

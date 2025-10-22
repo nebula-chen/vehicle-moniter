@@ -117,7 +117,7 @@
                     </table>
                 </div>
             </section>
-            <button id="btn-add" class="floating-add" title="新增任务">
+            <button id="btn-add" class="floating-add" title="createCar">
                 <i class="bi bi-plus-lg"></i>
             </button>
         </div>
@@ -129,5 +129,38 @@
             <!-- 详情由 secondary.js 动态渲染 -->
         </div>
     </aside>
+
+    <!-- 新增车辆模态（默认隐藏） -->
+    <div id="modal-create-vehicle" class="modal" aria-hidden="true" style="display:none;">
+        <div class="modal-backdrop" id="modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);"></div>
+        <div class="modal-dialog" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border-radius:6px;max-width:520px;width:90%;box-shadow:0 6px 20px rgba(0,0,0,0.2);z-index:1000;">
+            <div style="padding:16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+                <h3 style="margin:0;font-size:16px;">创建车辆</h3>
+                <button id="modal-close" aria-label="关闭" style="background:none;border:0;font-size:20px;line-height:1;">&times;</button>
+            </div>
+            <form id="createVehicleForm" style="padding:12px;">
+                <!-- 中文注释：表单字段对应后端 CreateVehicleReq；vehicleId 由服务端自动生成，前端无需填写 -->
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <input id="cv-plateNumber" name="plateNumber" placeholder="车牌号" />
+                    <!-- 车型值为整数：0 普通车,1 大型车,2 冷藏车,3 冷冻车；Type/TotalCapacity/BatteryInfo 为必填（整数） -->
+                    <select id="cv-type" name="type">
+                        <option value="">-- 请选择车型（必填） --</option>
+                        <option value="0">普通车</option>
+                        <option value="1">大型车</option>
+                        <option value="2">冷藏车</option>
+                        <option value="3">冷冻车</option>
+                    </select>
+                    <input id="cv-totalCapacity" name="totalCapacity" placeholder="总容量（立方米，整数，必填）" inputmode="numeric" />
+                    <input id="cv-batteryInfo" name="batteryInfo" placeholder="电池信息（百分比 0-100，整数，必填）" inputmode="numeric" />
+                    <input id="cv-routeId" name="routeId" placeholder="所属路线ID" />
+                    <textarea id="cv-extra" name="extra" placeholder="备注/扩展信息（可选）" rows="3"></textarea>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+                    <button type="button" id="cv-cancel" style="padding:8px 12px;border-radius:4px;background:#f3f3f3;border:1px solid #ddd;">取消</button>
+                    <button type="submit" id="cv-submit" style="padding:8px 12px;border-radius:4px;background:#2d7cf3;color:#fff;border:0;">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
