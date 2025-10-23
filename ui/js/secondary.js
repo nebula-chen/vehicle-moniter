@@ -270,10 +270,10 @@ function renderTable(list) {
             <td>${item.id || ''}</td>
             <td>${item.name || ''}</td>
             <td>${item.phone || ''}</td>
-            <td>${item.network || ''}</td>
+            <td>${item.network || '--'}</td>
             <td>${item.joined || ''}</td>
             <td>${item.status || ''}</td>
-            <td>${item.note || ''}</td>
+            <td>${item.note || '--'}</td>
         `;
         tr.addEventListener('click', () => showDetail(item));
         tbody.appendChild(tr);
@@ -744,20 +744,41 @@ function openRoutesAndShowDetail(routeId) {
 
 // 暴露的 fetch 接口（占位）
 function fetchGridMembers(params = {}) {
-    // TODO: 替换为 fetch('/api/gridmembers'...) 等真实实现
-    console.log('fetchGridMembers called with', params);
-    return new Promise((resolve) => {
-        // mock 数据
-        const sample = [
-            { id: 'GM001', name: '张三', phone: '18888888888', network: '网格A', joined: '2024-03-10', status: '在职/正常', note: '' },
-            { id: 'GM002', name: '王五', phone: '18888888888', network: '网格B', joined: '2023-11-20', status: '在职/排休', note: '早班' },
-            { id: 'GM003', name: '赵六', phone: '18888888888', network: '网格C', joined: '2025-01-05', status: '在职/请假', note: '病假中' },
-            { id: 'GM004', name: '周七', phone: '18888888888', network: '大学城xxx001', joined: '2022-07-18', status: '离职/流程中', note: '交接中' },
-            { id: 'xxx001', name: '李四', phone: '18888888888', network: '大学城xxx001', joined: '2025-09-15', status: '在职/正常', note: '' },
-            { id: 'GM005', name: '孙八', phone: '18888888888', network: '中心区-03', joined: '2021-12-01', status: '离职/已离职', note: '已离职' }
-        ];
-        setTimeout(() => resolve(sample), 200);
-    });
+    // 实现：调用后端接口 /api/gridMember/list 获取网格员列表并做归一化
+    // params 支持 { id, nameOrContact, grid, status, startTime, endTime }
+    try {
+        const qs = new URLSearchParams();
+        if (params.id) qs.set('gridMemberId', params.id);
+        if (params.nameOrContact) qs.set('nameOrContact', params.nameOrContact);
+        if (params.grid) qs.set('isGridId', params.grid);
+        if (params.status) qs.set('status', params.status);
+        if (params.startTime) qs.set('startTime', params.startTime);
+        if (params.endTime) qs.set('endTime', params.endTime);
+
+        const url = '/api/gridMember/list' + (qs.toString() ? ('?' + qs.toString()) : '');
+        return fetch(url, { method: 'GET', cache: 'no-store' })
+            .then(resp => {
+                if (!resp.ok) return resp.text().then(t => { throw new Error(t || resp.statusText); });
+                return resp.json().catch(() => ({}));
+            })
+            .then(json => {
+                // 兼容后端返回结构 types.GridMemberListResp { gridMembersList: [...], total }
+                const list = (json && json.gridMembersList) ? json.gridMembersList : (Array.isArray(json) ? json : []);
+                // 归一化成前端 renderTable 使用的字段： id,name,phone,network/joined,status,note
+                const out = (list || []).map(item => ({
+                    id: item.gridMemberId || item.GridMemberId || item.id || '',
+                    name: item.gridMemberName || item.GridMemberName || item.name || '',
+                    phone: item.gridMemberPhone || item.GridMemberPhone || item.phone || '',
+                    network: item.isGridId || item.IsGridId || item.network || '',
+                    joined: item.entryTime || item.EntryTime || item.joined || '',
+                    status: item.status || item.Status || '',
+                    note: item.note || item.Note || ''
+                }));
+                return out;
+            });
+    } catch (e) {
+        return Promise.reject(e);
+    }
 }
 
 // 事件绑定
@@ -792,7 +813,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         // 对其他页面保留占位提示
-        if (page === 'gridmember-profile') alert('打开新增网格员弹窗（占位）');
+        if (page === 'gridmember-profile') { 
+            const modal = document.getElementById('modal-create-gridMember');
+            if (modal) { openCreateGridMemberModal(); } else { alert('未找到创建网格员模态'); }
+        }
         else if (page === 'car-tasks') alert('打开新增任务弹窗（占位）');
         else alert('打开新增条目弹窗（占位）');
     });
@@ -1791,6 +1815,90 @@ function bindCreateVehicleForm() {
 
 // 尝试立即绑定创建表单（若 DOM 已加载）
 try { document.addEventListener('DOMContentLoaded', bindCreateVehicleForm); } catch(e) { setTimeout(bindCreateVehicleForm, 200); }
+
+
+// ----------------- 新增网格员：前端表单与后端联通 -----------------
+// 打开创建网格员模态（外部可调用）
+function openCreateGridMemberModal() {
+    const modal = document.getElementById('modal-create-gridMember');
+    if (!modal) return;
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+    try { const el = document.getElementById('gridMemberName'); if (el) setTimeout(()=>el.focus(),50); } catch(e){}
+}
+
+// 关闭创建网格员模态
+function closeCreateGridMemberModal() {
+    const modal = document.getElementById('modal-create-gridMember');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+// 创建网格员的高层封装（返回 Promise）
+function createGridMember(payload){
+    return postCreateResource('/api/gridMember/create', payload);
+}
+
+// 绑定创建网格员表单：将前端字段映射到后端 types.GridMemberCreateInfo，兼容 optional 字段
+function bindCreateGridMemberForm(){
+    const form = document.getElementById('createGridMemberForm');
+    const modal = document.getElementById('modal-create-gridMember');
+    if (!form || !modal) return;
+
+    // 关闭按钮（模态中的通用 id 为 modal-close）
+    const btnClose = document.getElementById('modal-close');
+    if (btnClose) btnClose.addEventListener('click', closeCreateGridMemberModal);
+    const btnCancel = document.getElementById('cv-cancel');
+    if (btnCancel) btnCancel.addEventListener('click', closeCreateGridMemberModal);
+    const backdrop = document.getElementById('modal-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeCreateGridMemberModal);
+    document.addEventListener('keydown', function onEsc(e){ if (e.key === 'Escape') { closeCreateGridMemberModal(); } });
+
+    form.addEventListener('submit', function(ev){
+        ev.preventDefault();
+
+        // 收集字段并进行基础校验（姓名为必填，其它字段可选）
+        const nameEl = document.getElementById('gridMemberName');
+        const phoneEl = document.getElementById('gridMemberPhone');
+        const gridEl = document.getElementById('isGridId');
+        const statusEl = document.getElementById('status');
+        const noteEl = document.getElementById('note');
+
+        const gridMemberName = nameEl && nameEl.value.trim();
+        const gridMemberPhone = phoneEl && phoneEl.value.trim();
+        const isGridId = gridEl && gridEl.value;
+        const status = statusEl && statusEl.value;
+        const note = noteEl && noteEl.value.trim();
+
+    if (!gridMemberName) { showToast('请填写姓名（必填）'); return; }
+    if (!gridMemberPhone) { showToast('请填写联系方式（必填）'); return; }
+
+        // 构造 payload：仅在值存在时包含可选字段，保证与后端 types.GridMemberCreateInfo 的 optional 兼容
+        const payload = { gridMemberName: gridMemberName };
+        if (gridMemberPhone) payload.gridMemberPhone = gridMemberPhone;
+        if (isGridId) payload.isGridId = isGridId;
+        if (status) payload.status = status;
+        if (note) payload.note = note;
+
+        const submitBtn = document.getElementById('cv-submit');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '提交中…'; }
+
+        createGridMember(payload).then(json => {
+            console.log('[gridmember] create response', json);
+            closeCreateGridMemberModal();
+            showToast('创建成功');
+            // 尝试刷新网格员列表：如果存在 filterGridMember 或后端 list 接口，触发刷新
+            try { if (typeof filterGridMember === 'function') filterGridMember(); else { console.log('请手动刷新网格员列表'); } } catch(e){}
+        }).catch(err => {
+            console.error('[gridmember] create failed', err);
+            showToast('创建失败：' + (err && err.message ? err.message : String(err)));
+        }).finally(()=>{ if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; } });
+    });
+}
+
+// 尝试立即绑定创建表单（若 DOM 已加载）
+try { document.addEventListener('DOMContentLoaded', bindCreateGridMemberForm); } catch(e) { setTimeout(bindCreateGridMemberForm, 200); }
 
 
 // 在 stations-io 页面使用的筛选函数：查找 WAREHOUSES/STORES 并创建/切换标签页
