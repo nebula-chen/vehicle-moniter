@@ -357,12 +357,38 @@ function showDetail(item) {
         let subs = [];
         if (Array.isArray(r.vehicles)) subs = r.vehicles.slice();
         else {
-            const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
-            subs = vehicles.filter(v => ((v.routeId||v.route||'')+'').includes(r.id || '')).map(v => v.id);
+            // 访问可能不存在的全局变量时要保护性判断，避免 ReferenceError
+            const vehiclesGlobal = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (typeof vehiclesData !== 'undefined' && Array.isArray(vehiclesData) ? vehiclesData : []));
+            subs = vehiclesGlobal.filter(v => ((v.routeId||v.route||'')+'').includes(r.id || '')).map(v => v.id);
         }
 
-        const waypointsHtml = Array.isArray(r.waypoints) && r.waypoints.length > 0 ? r.waypoints.map((w, i) => `<li>[${i+1}] ${w.lng}, ${w.lat}</li>`).join('') : '<li>--</li>';
-        const vehiclesHtml = subs.length > 0 ? subs.map(id => `<a href="car-screen.html?vehicle=${encodeURIComponent(id)}" target="_blank" rel="noopener">${id}</a>`).join('<br>') : '--';
+        // 使用 DOM 构建途径点与车辆列表，避免直接 innerHTML 拼接后端自由文本（XSS 风险）
+        const waypointsNode = document.createElement('div');
+        waypointsNode.innerHTML = '<ul></ul>';
+        const waypointsUl = waypointsNode.querySelector('ul');
+        if (Array.isArray(r.waypoints) && r.waypoints.length > 0) {
+            r.waypoints.forEach((w, i) => {
+                const li = document.createElement('li');
+                li.textContent = `[${i+1}] ${String(w.lng || '')}, ${String(w.lat || '')}`;
+                waypointsUl.appendChild(li);
+            });
+        } else {
+            const li = document.createElement('li'); li.textContent = '--'; waypointsUl.appendChild(li);
+        }
+
+        const vehiclesListNode = document.createElement('div');
+        if (subs.length > 0) {
+            subs.forEach((id, idx) => {
+                const a = document.createElement('a');
+                a.href = 'car-screen.html?vehicle=' + encodeURIComponent(id);
+                a.target = '_blank'; a.rel = 'noopener';
+                a.textContent = id;
+                vehiclesListNode.appendChild(a);
+                if (idx < subs.length - 1) vehiclesListNode.appendChild(document.createElement('br'));
+            });
+        } else {
+            vehiclesListNode.textContent = '--';
+        }
 
         // 使用统一 info-list 渲染路线详情
         const ul = document.createElement('ul');
@@ -389,14 +415,10 @@ function showDetail(item) {
         pushItem('起点', r.from || (r.waypoints && r.waypoints[0] ? (r.waypoints[0].lng + ',' + r.waypoints[0].lat) : ''));
         pushItem('终点', r.to || (r.waypoints && r.waypoints[r.waypoints.length-1] ? (r.waypoints[r.waypoints.length-1].lng + ',' + r.waypoints[r.waypoints.length-1].lat) : ''));
 
-        const wpNode = document.createElement('div');
-        wpNode.innerHTML = '<ul>' + waypointsHtml + '</ul>';
-        pushItem('途径点', wpNode);
-
-        const vehiclesNode = document.createElement('div');
-        vehiclesNode.innerHTML = vehiclesHtml;
+        // 使用之前构建的 DOM 节点代替直接拼接的 HTML 字符串，避免 XSS
+        pushItem('途径点', waypointsNode);
         pushItem('下属车辆', ' ');
-        pushItem('', vehiclesNode);
+        pushItem('', vehiclesListNode);
 
         pushItem('创建时间', r.createdAt || '');
         pushItem('预计里程', r.estimatedDistanceKm != null ? (r.estimatedDistanceKm + ' km') : '--');
@@ -499,6 +521,40 @@ function fetchVehicleDetail(id) {
             // 期望 { vehicle: {...}, extra: {...} }
             if (json && json.vehicle) return json;
             throw new Error('无效的车辆详情响应');
+        });
+}
+
+// 从后端拉取路线列表，返回 Promise< RouteInfoResp[] >
+// filters 可包含 { routeId, stationId, vehicleId, status }
+function fetchRouteList(filters = {}) {
+    console.log('[route] fetchRouteList called with filters:', filters);
+    const params = new URLSearchParams();
+    if (filters.routeId) params.append('routeId', filters.routeId);
+    if (filters.stationId) params.append('stationId', filters.stationId);
+    if (filters.vehicleId) params.append('vehicleId', filters.vehicleId);
+    if (filters.status) params.append('status', filters.status);
+    const url = '/api/route/list' + (params.toString() ? ('?' + params.toString()) : '');
+    // 使用 GET 调用后端路由列表接口
+    return fetch(url, { method: 'GET', cache: 'no-store' })
+        .then(resp => {
+            if (!resp.ok) throw new Error('网络错误: ' + resp.status);
+            return resp.json();
+        })
+        .then(json => {
+            // 兼容多种可能的返回格式，优先取 RouteList 字段
+            let list = [];
+            if (!json) list = [];
+            else if (Array.isArray(json.RouteList)) list = json.RouteList;
+            else if (json.data && Array.isArray(json.data.RouteList)) list = json.data.RouteList;
+            else if (Array.isArray(json.routeList)) list = json.routeList;
+            else if (Array.isArray(json)) list = json;
+            console.log('[route] fetchRouteList success, got', list.length, 'items');
+            return list;
+        })
+        .catch(err => {
+            console.error('[route] fetchRouteList failed', err);
+            // 抛出错误以便调用方可以回退到本地数据
+            throw err;
         });
 }
 
@@ -723,6 +779,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return;
         }
+        // 针对路线管理页面，打开创建路线模态
+        if (page === 'route-manage') {
+            // 打开我们在 route-manage.html 中新增的模态
+            const modal = document.getElementById('modal-create-route');
+            if (modal) {
+                openCreateRouteModal();
+                return;
+            } else {
+                alert('未找到创建路线模态');
+                return;
+            }
+        }
         // 对其他页面保留占位提示
         if (page === 'gridmember-profile') alert('打开新增网格员弹窗（占位）');
         else if (page === 'car-tasks') alert('打开新增任务弹窗（占位）');
@@ -783,20 +851,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch(e) { console.warn('apply status param failed', e); }
         } else if (page === 'route-manage') {
-            // 路线管理页面：默认渲染全部路线，并绑定筛选表单
+            // 路线管理页面：默认从后端拉取全部路线并渲染，增加控制台日志便于排查
             try {
-                const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (typeof plannedRoutes !== 'undefined' && Array.isArray(plannedRoutes) ? plannedRoutes : []);
-                renderRoutes(routes);
+                console.log('[route-manage] init: requesting backend route list');
+                // 先尝试通过后端接口获取全部路线
+                if (typeof fetchRouteList === 'function') {
+                    fetchRouteList().then(list => {
+                        try {
+                            // 将后端数据写入运行时缓存，便于 route-scheduling / 其它模块使用
+                            window.plannedRoutes = Array.isArray(list) ? list : [];
+                            renderRoutes(window.plannedRoutes);
+                        } catch (e) {
+                            console.error('[route-manage] renderRoutes failed', e);
+                            renderRoutes([]);
+                        }
+                    }).catch(err => {
+                        console.warn('[route-manage] fetchRouteList failed, fallback to local plannedRoutes', err);
+                        const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (typeof plannedRoutes !== 'undefined' && Array.isArray(plannedRoutes) ? plannedRoutes : []);
+                        renderRoutes(routes);
+                    });
+                } else {
+                    console.warn('[route-manage] fetchRouteList not available, using local plannedRoutes');
+                    const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (typeof plannedRoutes !== 'undefined' && Array.isArray(plannedRoutes) ? plannedRoutes : []);
+                    renderRoutes(routes);
+                }
+
                 const filterForm = document.getElementById('filterForm');
                 if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterRoutes(); });
-                // if URL contains route param, apply it and open detail
+
+                // 如果 URL 含有 route 参数，则在数据渲染后打开详情
                 try {
                     const params = new URLSearchParams(window.location.search);
                     const routeParam = params.get('route');
                     if (routeParam) {
                         let decoded = null;
                         try { decoded = decodeURIComponent(routeParam); } catch(e){ decoded = routeParam; }
-                        openRoutesAndShowDetail(decoded);
+                        // 延迟尝试打开详情，给异步渲染留出时间
+                        setTimeout(() => { try { openRoutesAndShowDetail(decoded); } catch(e) { console.warn('[route-manage] openRoutesAndShowDetail failed', e); } }, 250);
                     }
                 } catch(e) { console.warn('route-manage apply param failed', e); }
             } catch (e) { console.error('route-manage init failed', e); }
@@ -1078,13 +1169,43 @@ function filterRoutes() {
     const tbody = document.getElementById('table-body');
     if (!tbody) return;
 
-    // data source: prefer global plannedRoutes, fallback to empty
-    const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (Array.isArray(plannedRoutes) ? plannedRoutes : []);
+    // 在发起请求前显示加载状态
+    tbody.innerHTML = '<tr class="table-loading"><td colspan="8">加载中…</td></tr>';
 
+    // 优先使用后端接口获取并过滤路线数据
+    if (typeof fetchRouteList === 'function') {
+        fetchRouteList({ routeId: routeId, stationId: point, status: status })
+            .then(list => {
+                try {
+                    // 后端返回 RouteInfoResp[]，renderRoutes 做渲染
+                    renderRoutes(list || []);
+                } catch (e) {
+                    console.error('[route] renderRoutes failed', e);
+                    renderRoutes([]);
+                }
+            })
+            .catch(err => {
+                console.warn('[route] fetchRouteList failed, fallback to local plannedRoutes if present', err);
+                // 回退到页面可能存在的本地全局数据（兼容旧版）
+                const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (Array.isArray(plannedRoutes) ? plannedRoutes : []);
+                // 在本地数据上做相同的客户端过滤（保持行为一致）
+                const matched = (routes || []).filter(r => {
+                    const idMatch = routeId === '' || ((r.id || '') + '').includes(routeId);
+                    const pointMatch = point === '' || ((r.waypoints || []).some(w => (String(w.lng) + ',' + String(w.lat)).includes(point)) || (r.from || '').includes(point) || (r.to || '').includes(point));
+                    const routeStatus = (r.status || '正常') + '';
+                    const statusMatch = status === '' || routeStatus.includes(status);
+                    return idMatch && pointMatch && statusMatch;
+                });
+                renderRoutes(matched);
+            });
+        return;
+    }
+
+    // 若没有后端接口，回退到本地数据
+    const routes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : (Array.isArray(plannedRoutes) ? plannedRoutes : []);
     const matched = routes.filter(r => {
         const idMatch = routeId === '' || ((r.id || '') + '').includes(routeId);
         const pointMatch = point === '' || ((r.waypoints || []).some(w => (String(w.lng) + ',' + String(w.lat)).includes(point)) || (r.from || '').includes(point) || (r.to || '').includes(point));
-        // normalize status: if route has explicit status use it; otherwise treat as '正常'
         const routeStatus = (r.status || '正常') + '';
         const statusMatch = status === '' || routeStatus.includes(status);
         return idMatch && pointMatch && statusMatch;
@@ -1105,40 +1226,74 @@ function renderRoutes(list) {
         return;
     }
 
-    // helper to find vehicles assigned to route
-    const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
-
-    list.forEach(r => {
-        const tr = document.createElement('tr');
-        const id = r.id || '';
-        // find subordinate vehicles: support either r.vehicles array or lookup from global vehiclesData
-        let subs = [];
-        if (Array.isArray(r.vehicles)) subs = r.vehicles.slice();
-        else subs = vehicles.filter(v => ((v.routeId||v.route||'')+'').includes(id)).map(v=>v.id);
-
-        // 起点和终点应使用 r.from 与 r.to
-        const fromText = r.from || ((r.waypoints && r.waypoints[0]) ? (r.waypoints[0].lng + ',' + r.waypoints[0].lat) : '');
-        const toText = r.to || ((r.waypoints && r.waypoints[r.waypoints.length-1]) ? (r.waypoints[r.waypoints.length-1].lng + ',' + r.waypoints[r.waypoints.length-1].lat) : '');
-
-        // 途径点：当 waypoints.length > 2 时，显示第二个到倒数第二个点；否则显示 '--'
-        let midPoints = '--';
-        if (Array.isArray(r.waypoints) && r.waypoints.length > 2) {
-            midPoints = r.waypoints.slice(1, r.waypoints.length-1).map((w,i) => `[${i+2}] ${w.lng},${w.lat}`).join('<br>');
+    // 将后端返回的 RouteInfoResp 规范化为前端可用字段，兼容大小写及不同格式
+    function normalizeRoute(src) {
+        const o = src || {};
+        const id = o.routeId || o.RouteId || o.id || o.Route || '';
+        const status = (o.status || o.Status || '正常') + '';
+        const from = o.startStation || o.StartStation || o.from || o.From || '';
+        const to = o.endStation || o.EndStation || o.to || o.To || '';
+        // passStations 可能是数组、null 或逗号分隔字符串
+        let passStations = [];
+        if (Array.isArray(o.passStations)) passStations = o.passStations.slice();
+        else if (Array.isArray(o.PassStations)) passStations = o.PassStations.slice();
+        else if (typeof o.passStations === 'string' && o.passStations.trim() !== '') {
+            try { passStations = JSON.parse(o.passStations); if (!Array.isArray(passStations)) passStations = o.passStations.split(',').map(s=>s.trim()).filter(Boolean); } catch(e){ passStations = o.passStations.split(',').map(s=>s.trim()).filter(Boolean); }
+        } else if (typeof o.PassStations === 'string' && o.PassStations.trim() !== '') {
+            try { passStations = JSON.parse(o.PassStations); if (!Array.isArray(passStations)) passStations = o.PassStations.split(',').map(s=>s.trim()).filter(Boolean); } catch(e){ passStations = o.PassStations.split(',').map(s=>s.trim()).filter(Boolean); }
         }
+        // passVehicles similar
+        let passVehicles = [];
+        if (Array.isArray(o.passVehicles)) passVehicles = o.passVehicles.slice();
+        else if (Array.isArray(o.PassVehicles)) passVehicles = o.PassVehicles.slice();
+        else if (typeof o.passVehicles === 'string' && o.passVehicles.trim() !== '') {
+            try { passVehicles = JSON.parse(o.passVehicles); if (!Array.isArray(passVehicles)) passVehicles = o.passVehicles.split(',').map(s=>s.trim()).filter(Boolean); } catch(e){ passVehicles = o.passVehicles.split(',').map(s=>s.trim()).filter(Boolean); }
+        } else if (typeof o.PassVehicles === 'string' && o.PassVehicles.trim() !== '') {
+            try { passVehicles = JSON.parse(o.PassVehicles); if (!Array.isArray(passVehicles)) passVehicles = o.PassVehicles.split(',').map(s=>s.trim()).filter(Boolean); } catch(e){ passVehicles = o.PassVehicles.split(',').map(s=>s.trim()).filter(Boolean); }
+        }
+        const createdAt = o.createTime || o.CreateTime || o.createdAt || o.created_at || '';
+        const distanceRaw = (o.distance != null && o.distance !== '') ? Number(o.distance) : (o.Distance != null && o.Distance !== '' ? Number(o.Distance) : (o.estimatedDistanceKm != null ? Number(o.estimatedDistanceKm) * 1000 : null));
+        const distanceKm = (distanceRaw != null && !isNaN(distanceRaw)) ? (distanceRaw / 1000) : null;
+        const note = o.note || o.Note || o.description || '';
+        return { id, status, from, to, passStations, passVehicles, createdAt, distanceKm, note, raw: o };
+    }
+
+    // helper to find vehicles assigned to route (safe access)
+    const vehiclesGlobal = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : ((typeof vehiclesData !== 'undefined' && Array.isArray(vehiclesData)) ? vehiclesData : []));
+
+    list.forEach(rsrc => {
+        const r = normalizeRoute(rsrc);
+        const tr = document.createElement('tr');
+        tr.dataset.id = r.id || '';
+
+        // compute subordinate vehicles count: prefer passVehicles, otherwise lookup from global vehicles
+        let subsCount = 0;
+        if (Array.isArray(r.passVehicles) && r.passVehicles.length > 0) subsCount = r.passVehicles.length;
+        else if (r.id) subsCount = vehiclesGlobal.filter(v => ((v.routeId||v.route||'')+'').includes(r.id)).length;
+
+        // 途径点展示为逗号/换行分隔的站点编号
+        const midPoints = (Array.isArray(r.passStations) && r.passStations.length > 0) ? r.passStations.map(s => escapeHtml(String(s))).join('<br>') : '--';
+
+        const fromText = escapeHtml(r.from || '');
+        const toText = escapeHtml(r.to || '');
+        const createdText = formatTimeForDisplay(r.createdAt || '');
+        const distText = (r.distanceKm != null && !isNaN(r.distanceKm)) ? (Number(r.distanceKm).toFixed(2) + ' km') : '';
 
         tr.innerHTML = `
-            <td>${id}</td>
-            <td>${r.status || '正常'}</td>
+            <td>${escapeHtml(r.id)}</td>
+            <td>${escapeHtml(r.status || '正常')}</td>
             <td>${fromText}</td>
             <td>${toText}</td>
             <td>${midPoints}</td>
-            <td>${subs.length}</td>
-            <td>${r.createdAt || ''}</td>
-            <td>${r.estimatedDistanceKm != null ? r.estimatedDistanceKm + ' km' : ''}</td>
+            <td>${escapeHtml(String(subsCount))}</td>
+            <td>${escapeHtml(createdText)}</td>
+            <td>${escapeHtml(distText)}</td>
         `;
-        // prevent row click when clicking links
+
+        // stop propagation on any links inside row (if present)
         const links = tr.querySelectorAll('.link-to-map, .link-to-station, .link-to-route');
         links.forEach(a => a.addEventListener('click', function(evt){ evt.stopPropagation(); }));
+        // 点击行打开详情，传入已经规范化的 route 对象（而不是原始 raw），避免字段名不一致导致显示为空
         tr.addEventListener('click', () => showDetail(r));
         tbody.appendChild(tr);
     });
@@ -1464,6 +1619,111 @@ function showToast(msg, duration = 3000) {
     }
 }
 
+// ----------------- 新增路线：前端表单与后端联通 -----------------
+// 打开创建路线模态
+function openCreateRouteModal(){
+    const modal = document.getElementById('modal-create-route');
+    if (!modal) return;
+    modal.style.display = 'block';
+    modal.setAttribute('aria-hidden', 'false');
+    try { const el = document.getElementById('cr-routeId') || document.getElementById('cr-from'); if (el) setTimeout(()=>el.focus(),50); } catch(e){}
+}
+
+// 关闭创建路线模态
+function closeCreateRouteModal(){
+    const modal = document.getElementById('modal-create-route');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+// 绑定创建路线表单行为：提交到后端 /api/route/create（假设）
+function bindCreateRouteForm(){
+    const form = document.getElementById('createRouteForm');
+    const modal = document.getElementById('modal-create-route');
+    if (!form || !modal) return;
+
+    // 关闭按钮
+    const btnClose = document.getElementById('modal-close');
+    if (btnClose) btnClose.addEventListener('click', closeCreateRouteModal);
+    const btnCancel = document.getElementById('cv-cancel');
+    if (btnCancel) btnCancel.addEventListener('click', closeCreateRouteModal);
+    // 点击遮罩关闭
+    const backdrop = document.getElementById('modal-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeCreateRouteModal);
+    // 按 ESC 关闭模态
+    document.addEventListener('keydown', function onEsc(e){ if (e.key === 'Escape') { closeCreateRouteModal(); } });
+
+    form.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        // 收集表单数据并做基础校验
+        const routeId = (document.getElementById('cr-routeId') && document.getElementById('cr-routeId').value.trim()) || '';
+        const from = (document.getElementById('cr-from') && document.getElementById('cr-from').value.trim()) || '';
+        const to = (document.getElementById('cr-to') && document.getElementById('cr-to').value.trim()) || '';
+        const passStations = (document.getElementById('cr-passStations') && document.getElementById('cr-passStations').value.trim()) || '';
+        const passVehicles = (document.getElementById('cr-passVehicles') && document.getElementById('cr-passVehicles').value.trim()) || '';
+        const distanceKm = (document.getElementById('cr-distanceKm') && document.getElementById('cr-distanceKm').value) || '';
+        const note = (document.getElementById('cr-note') && document.getElementById('cr-note').value.trim()) || '';
+
+        // 简单校验：必须有起点和终点
+        if (!from || !to) { showToast('请填写起点和终点'); return; }
+
+        // 构造请求体，严格对应后端 RouteCreateInfo 定义。
+        // 注意：RouteCreateInfo 中 routeId 不是创建请求的一部分（后端会生成 routeId），
+        //       对于可选字段（passStations/passVehicles/distance/note）仅在非空时包含，避免发送空数组或 undefined 导致后端解析困扰。
+        const payload = {
+            // 必填
+            startStation: from,
+            endStation: to
+        };
+
+        // 可选：途径站点（数组），仅在输入非空时添加
+        if (passStations) {
+            const arr = passStations.split(',').map(s=>s.trim()).filter(Boolean);
+            if (arr.length > 0) payload.passStations = arr;
+        }
+
+        // 可选：下属车辆（数组），仅在输入非空时添加
+        if (passVehicles) {
+            const arr = passVehicles.split(',').map(s=>s.trim()).filter(Boolean);
+            if (arr.length > 0) payload.passVehicles = arr;
+        }
+
+        // 可选：距离（米），若用户填写里程则转换为整数米并添加
+        if (distanceKm !== '' && !isNaN(Number(distanceKm))) {
+            const meters = Math.round(Number(distanceKm) * 1000);
+            if (!isNaN(meters)) payload.distance = meters;
+        }
+
+        // 可选：备注
+        if (note) payload.note = note;
+
+        const submitBtn = document.getElementById('cr-submit');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '提交中…'; }
+
+        console.log('[route] creating route with payload:', payload);
+        // 使用 createRoute 统一创建路线，便于复用与将来扩展
+        createRoute(payload).then(json => {
+            console.log('[route] create response', json);
+            closeCreateRouteModal();
+            showToast('创建成功');
+            // 刷新列表
+            if (typeof fetchRouteList === 'function') {
+                fetchRouteList().then(list => { window.plannedRoutes = Array.isArray(list) ? list : []; renderRoutes(window.plannedRoutes); }).catch(e=>{ console.warn('[route] refresh after create failed', e); });
+            } else {
+                // 若无后端接口，尝试在本地添加并渲染
+                try { window.plannedRoutes = Array.isArray(window.plannedRoutes) ? window.plannedRoutes : []; window.plannedRoutes.unshift(payload); renderRoutes(window.plannedRoutes); } catch(e){}
+            }
+        }).catch(err => {
+            console.error('[route] create failed', err);
+            showToast('创建失败：' + (err && err.message ? err.message : String(err)));
+        }).finally(()=>{ if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '创建'; } });
+    });
+}
+
+// 绑定创建路线表单（尝试立即绑定，如果 DOMContentLoaded 后再绑定）
+try { document.addEventListener('DOMContentLoaded', bindCreateRouteForm); } catch(e) { setTimeout(bindCreateRouteForm, 200); }
+
 // 处理表单提交：构造请求并 POST 到后端 /api/vehicles
 function bindCreateVehicleForm() {
     const form = document.getElementById('createVehicleForm');
@@ -1514,19 +1774,11 @@ function bindCreateVehicleForm() {
         const submitBtn = document.getElementById('cv-submit');
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '提交中…'; }
 
-        fetch('/api/vehicles', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            cache: 'no-store'
-        }).then(resp => {
-            if (!resp.ok) return resp.text().then(t => { throw new Error(t || ('HTTP ' + resp.status)); });
-            return resp.json().catch(() => ({}));
-        }).then(json => {
-            // 解析后端返回，service.api 里返回 ResultResp（{ result: string }）
+        // 使用 createVehicle 封装进行请求，便于复用
+        createVehicle(payload).then(json => {
+            // 成功：关闭模态并提示，尝试刷新列表
             closeCreateVehicleModal();
             showToast('创建成功');
-            // 尝试刷新车辆列表：若存在 fetchVehicles 或 filterCar 则调用
             try { if (typeof fetchVehicles === 'function') fetchVehicles().then(remote => { window.vehiclesData = Array.isArray(remote) ? remote : (remote && Array.isArray(remote.vehicles) ? remote.vehicles : []); renderVehicleTable(normalizeVehicles(window.vehiclesData)); }).catch(()=>{ if (typeof filterCar === 'function') filterCar(); }); else if (typeof filterCar === 'function') filterCar(); } catch(e) { console.warn('刷新车辆列表失败', e); }
         }).catch(err => {
             console.error('创建车辆失败', err);
@@ -1835,7 +2087,7 @@ function filterStation() {
         // helper: render vehicles rows for a route using window.vehiclesData
         function renderVehiclesForRoute(routeId, routeObj){
             try{
-                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : ((typeof vehiclesData !== 'undefined' && Array.isArray(vehiclesData)) ? vehiclesData : []));
                 const assigned = (routeObj && Array.isArray(routeObj.vehicles)) ? routeObj.vehicles : [];
                 if (!assigned || assigned.length === 0) return '<tr><td colspan="7" class="no-data">暂无车辆</td></tr>';
                 return assigned.map(vId => {
@@ -1933,7 +2185,7 @@ function filterStation() {
                 // try to append a new vehicle row into the route's vehicle table
                 const tbody = document.getElementById('veh-tbody-' + routeId);
                 const span = document.getElementById('veh-count-' + routeId);
-                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : (Array.isArray(vehiclesData) ? vehiclesData : []));
+                const vehicles = Array.isArray(window.vehiclesData) ? window.vehiclesData : (Array.isArray(window._vehiclesData) ? window._vehiclesData : ((typeof vehiclesData !== 'undefined' && Array.isArray(vehiclesData)) ? vehiclesData : []));
                 // create a synthetic id for demo if no actual vehicle available
                 const newId = 'NEW' + String(Math.floor(Math.random()*9000)+1000);
                 // choose first unassigned vehicle from window.vehiclesData not already in the table
@@ -1974,4 +2226,45 @@ function filterStation() {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initRouteScheduling);
     else initRouteScheduling();
 })();
+
+// ----------------- 通用资源创建器与具体 create 方法 -----------------
+/**
+ * 通用 POST 创建资源的 helper
+ * @param {string} url - 目标接口 URL
+ * @param {object} payload - 要发送的请求体（将 JSON.stringify）
+ * @returns {Promise<object>} - 返回解析后的 JSON（若无 JSON 则返回 {}）
+ *
+ * 中文说明：该函数封装 fetch POST 行为，统一处理 Content-Type、错误解析和缓存策略，
+ * 便于多个表单复用（车辆/路线/网格员/仓库等）。调用方可以在 then/catch 中处理 UI 状态。
+ */
+function postCreateResource(url, payload){
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        cache: 'no-store'
+    }).then(resp => {
+        if (!resp.ok) return resp.text().then(t => { throw new Error(t || ('HTTP ' + resp.status)); });
+        return resp.json().catch(() => ({}));
+    });
+}
+
+/**
+ * 创建车辆的高层封装（返回 Promise）
+ * @param {object} payload - 创建车辆所需字段（type/totalCapacity/batteryInfo 等）
+ * @returns {Promise<object>}
+ */
+function createVehicle(payload){
+    // TODO: 若未来需要在请求前增加认证/签名，可在此统一处理
+    return postCreateResource('/api/vehicles', payload);
+}
+
+/**
+ * 创建路线的高层封装（返回 Promise）
+ * @param {object} payload - 创建路线所需字段（startStation/endStation/passStations 等）
+ * @returns {Promise<object>}
+ */
+function createRoute(payload){
+    return postCreateResource('/api/route/create', payload);
+}
 
