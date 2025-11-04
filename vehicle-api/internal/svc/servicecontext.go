@@ -154,6 +154,23 @@ func autoMigrate(db *sql.DB) error {
 		return err
 	}
 
+	// 创建未在平台登记的车辆上报记录表，用于记录那些上报但未在 vehicle_list 中预注册的车辆
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS unregistered_vehicle_reports (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		vehicle_id VARCHAR(128) NOT NULL UNIQUE,
+		first_seen DATETIME NOT NULL,
+		last_seen DATETIME NOT NULL,
+		report_count INT DEFAULT 1,
+		last_payload JSON,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -184,6 +201,27 @@ func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 		return nil
 	}
 
+	// 如果启用了 MySQL，则先检查车辆是否在 vehicle_list 中登记
+	isRegistered := false
+	if sc.MySQLDB != nil {
+		var tmp int
+		err := sc.MySQLDB.QueryRow("SELECT 1 FROM vehicle_list WHERE vehicle_id = ?", req.VehicleId).Scan(&tmp)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// 车辆未登记，记录到 unregistered_vehicle_reports 表（插入或更新）
+				if recErr := recordUnregisteredVehicle(sc.MySQLDB, req); recErr != nil {
+					logx.Errorf("record unregistered vehicle error: %v", recErr)
+				} else {
+					logx.Infof("recorded unregistered vehicle: %s", req.VehicleId)
+				}
+			} else {
+				logx.Errorf("check vehicle existence error: %v", err)
+			}
+		} else {
+			isRegistered = true
+		}
+	}
+
 	// 写入 InfluxDB
 	if sc.Dao == nil {
 		logx.Errorf("no dao configured, skip write")
@@ -200,13 +238,63 @@ func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 
 	// 广播最新状态到 websocket hub
 	if sc.WSHub != nil {
-		bs, _ := json.Marshal(map[string]interface{}{
-			"vehicleId": req.VehicleId,
-			"timestamp": req.TimestampGNSS,
-			"lon":       req.Position.Longitude,
-			"lat":       req.Position.Latitude,
-			"velocity":  req.Velocity,
-		})
+		// 扩展广播的 payload，包含动态数据和（若注册）静态信息
+		payload := map[string]interface{}{
+			"vehicleId":    req.VehicleId,
+			"timestamp":    req.TimestampGNSS,
+			"lon":          req.Position.Longitude,
+			"lat":          req.Position.Latitude,
+			"velocity":     req.Velocity,
+			"heading":      req.Heading,
+			"velocityGNSS": req.VelocityGNSS,
+		}
+
+		// 若车辆在 vehicle_list 中注册，则查询并附加静态信息
+		if isRegistered && sc.MySQLDB != nil {
+			var staticInfo struct {
+				PlateNumber   string         `db:"plate_number"`
+				Type          int            `db:"type"`
+				TotalCapacity int            `db:"total_capacity"`
+				BatteryInfo   int            `db:"battery_info"`
+				RouteId       string         `db:"route_id"`
+				Status        string         `db:"status"`
+				Extra         sql.NullString `db:"extra"`
+			}
+			err := sc.MySQLDB.QueryRow(
+				"SELECT plate_number, type, total_capacity, battery_info, route_id, status, extra FROM vehicle_list WHERE vehicle_id = ?",
+				req.VehicleId,
+			).Scan(&staticInfo.PlateNumber, &staticInfo.Type, &staticInfo.TotalCapacity, &staticInfo.BatteryInfo, &staticInfo.RouteId, &staticInfo.Status, &staticInfo.Extra)
+			if err != nil {
+				logx.Errorf("query vehicle static info error: %v", err)
+			} else {
+				payload["plateNumber"] = staticInfo.PlateNumber
+				payload["type"] = staticInfo.Type
+				payload["capacity"] = staticInfo.TotalCapacity
+				payload["battery"] = staticInfo.BatteryInfo
+				payload["routeId"] = staticInfo.RouteId
+				payload["status"] = staticInfo.Status
+				if staticInfo.Extra.Valid {
+					payload["extra"] = staticInfo.Extra.String
+				}
+			}
+		}
+
+		// 若目的地可用，按经纬增加到 payload（注意 Position2D 使用 uint32 编码，与 Position 一致）
+		if req.DestLocation.Longitude != 0 || req.DestLocation.Latitude != 0 {
+			payload["destLon"] = req.DestLocation.Longitude
+			payload["destLat"] = req.DestLocation.Latitude
+		}
+
+		// 若存在途经点，直接附加（前端可选择是否绘制）
+		if len(req.PassPoints) > 0 {
+			var pts []map[string]uint32
+			for _, p := range req.PassPoints {
+				pts = append(pts, map[string]uint32{"lon": p.Longitude, "lat": p.Latitude})
+			}
+			payload["passPoints"] = pts
+		}
+
+		bs, _ := json.Marshal(payload)
 		sc.WSHub.Broadcast <- bs
 	}
 
@@ -220,4 +308,30 @@ func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 
 	// TODO: parsing planningLocs, detectionData, custom cargo fields
 	return nil
+}
+
+// recordUnregisteredVehicle 将未在 platform 登记的车辆上报写入或更新到 unregistered_vehicle_reports 表
+// - 如果已有记录，则更新 last_seen、report_count 和 last_payload
+// - 否则插入新记录（first_seen/last_seen/report_count=1）
+func recordUnregisteredVehicle(db *sql.DB, req *types.VEH2CLOUD_STATE) error {
+	if db == nil {
+		return fmt.Errorf("nil db")
+	}
+	// 尝试将上报的状态序列化为 JSON 存储到 last_payload 中，便于后续排查
+	bs, _ := json.Marshal(req)
+	payload := string(bs)
+	now := time.Now()
+
+	// 先尝试更新已有记录
+	res, err := db.Exec("UPDATE unregistered_vehicle_reports SET last_seen = ?, report_count = report_count + 1, last_payload = ? WHERE vehicle_id = ?", now, payload, req.VehicleId)
+	if err != nil {
+		return err
+	}
+	if ra, _ := res.RowsAffected(); ra > 0 {
+		return nil
+	}
+
+	// 如果没有更新到行，则插入新记录
+	_, err = db.Exec("INSERT INTO unregistered_vehicle_reports (vehicle_id, first_seen, last_seen, report_count, last_payload) VALUES (?, ?, ?, 1, ?)", req.VehicleId, now, now, payload)
+	return err
 }

@@ -47,24 +47,66 @@
         } catch(e){ console.warn('toggleMapLayer error', e); }
     };
 
-    // 数据接口预留示例
+    // 用于跟踪当前所有车辆状态的内部缓存
+    const _vehicleStatusCache = {
+        totalCount: 0,
+        statusCounts: {
+            '在途': 0,
+            '空闲': 0,
+            '充电中': 0,
+            '异常': 0
+        },
+        vehicles: {} // vehicleId -> status
+    };
+
+    // 更新车辆状态计数
+    function updateVehicleStatusCount(vehicleId, status) {
+        const oldStatus = _vehicleStatusCache.vehicles[vehicleId];
+        if (oldStatus === status) return; // 状态未变化，不需要更新计数
+
+        // 如果是已知车辆，先减少原状态计数
+        if (oldStatus) {
+            _vehicleStatusCache.statusCounts[oldStatus] = 
+                Math.max(0, (_vehicleStatusCache.statusCounts[oldStatus] || 0) - 1);
+        } else {
+            // 新车辆，增加总数
+            _vehicleStatusCache.totalCount++;
+        }
+
+        // 更新新状态计数
+        if (status) {
+            _vehicleStatusCache.statusCounts[status] = 
+                (_vehicleStatusCache.statusCounts[status] || 0) + 1;
+            _vehicleStatusCache.vehicles[vehicleId] = status;
+        }
+    }
+
+    // 数据接口：更新车辆信息面板
     window.updateVehiclePanel = function(data) {
-        document.getElementById('total-value').textContent = data.totalValue || '128';
-        document.getElementById('stat-onroad').textContent = data.onroadTitle || '在途车辆';
-        document.getElementById('onroad-value').textContent = data.onroadValue || '56';
-        document.getElementById('stat-abnormal').textContent = data.abnormalTitle || '异常车辆';
-        document.getElementById('abnormal-value').textContent = data.abnormalValue || '2';
-        document.getElementById('stat-idle').textContent = data.idleTitle || '空闲车辆';
-        document.getElementById('idle-value').textContent = data.idleValue || '60';
-        document.getElementById('stat-charging').textContent = data.chargingTitle || '充电车辆';
-        document.getElementById('charging-value').textContent = data.chargingValue || '10';
-        document.getElementById('vehicle-id').textContent = data.vehicleId || '000001';
-        document.getElementById('vehicle-type').textContent = data.vehicleType || '普通';
-        document.getElementById('vehicle-capacity').textContent = data.vehicleCapacity || '6立方';
-        document.getElementById('vehicle-battery').textContent = data.vehicleBattery || '100%';
-        document.getElementById('vehicle-speed').textContent = data.vehicleSpeed || '10km/h';
-        document.getElementById('vehicle-route').textContent = data.vehicleRoute || 'xx->xxx';
-        document.getElementById('vehicle-eta').textContent = data.vehicleEta || '2025-9-11 18:00';
+        // 如果提供了 status，更新状态统计
+        if (data.status && data.vehicleId) {
+            updateVehicleStatusCount(data.vehicleId, data.status);
+        }
+
+        // 更新汇总统计
+        document.getElementById('total-value').textContent = _vehicleStatusCache.totalCount || '0';
+        document.getElementById('stat-onroad').textContent = '在途车辆';
+        document.getElementById('onroad-value').textContent = _vehicleStatusCache.statusCounts['在途'] || '0';
+        document.getElementById('stat-abnormal').textContent = '异常车辆';
+        document.getElementById('abnormal-value').textContent = _vehicleStatusCache.statusCounts['异常'] || '0';
+        document.getElementById('stat-idle').textContent = '空闲车辆';
+        document.getElementById('idle-value').textContent = _vehicleStatusCache.statusCounts['空闲'] || '0';
+        document.getElementById('stat-charging').textContent = '充电车辆';
+        document.getElementById('charging-value').textContent = _vehicleStatusCache.statusCounts['充电中'] || '0';
+
+        // 更新单车详细信息（保持原有的 nullish 合并逻辑）
+        document.getElementById('vehicle-id').textContent = data.vehicleId ?? '--';
+        document.getElementById('vehicle-type').textContent = data.vehicleType ?? '--';
+        document.getElementById('vehicle-capacity').textContent = data.vehicleCapacity ?? '--';
+        document.getElementById('vehicle-battery').textContent = data.vehicleBattery ?? '--';
+        document.getElementById('vehicle-speed').textContent = data.vehicleSpeed ?? '--';
+        document.getElementById('vehicle-route').textContent = data.vehicleRoute ?? '--';
+        document.getElementById('vehicle-eta').textContent = data.vehicleEta ?? '--';
         // 实时画面接口预留
         if (data.videoElement) {
             const videoContainer = document.getElementById('vehicle-video');
@@ -75,6 +117,10 @@
 
     window.addEventListener('DOMContentLoaded', ()=>{
         renderCharts();
+        // 页面加载时从后端 vehicle-api 拉取车辆汇总统计并更新界面
+        try { fetchVehicleSummary(); } catch(e){}
+        // 初始化 WebSocket 客户端，用于接收 TCP 转发的车辆实时广播数据
+        try { initVehicleWS(); } catch(e){}
         // try to initialize AMap; use retry wrapper in case script loads slowly
         ensureInitMap(12, 300);
         // 如果 URL 中带有 vehicle 参数，尝试在地图与标记就绪后聚焦该车辆
@@ -279,11 +325,10 @@
     // helpers to read globals declared with const/let (which may not be on window)
     function getVehiclesMap(){
         // 优先使用运行时从后端拉取并缓存到 window.vehiclesData（首选）
+        // 仅信任真实运行时从后端注入的 window.vehiclesData
+        // 为了完全排除 `data.js` 中的静态示例数据影响（例如 window._vehiclesData 或 全局 vehiclesData），
+        // 我们不再回退到这些静态变量，若没有后端数据则返回空对象，避免误用示例数据。
         if (typeof window !== 'undefined' && Array.isArray(window.vehiclesData) && window.vehiclesData.length > 0) return window.vehiclesData;
-        // 回退到临时私有静态副本 window._vehiclesData（仅作离线/回退用）
-        if (typeof window !== 'undefined' && Array.isArray(window._vehiclesData) && window._vehiclesData.length > 0) return window._vehiclesData;
-        // 兼容旧代码中可能存在的局部 vehiclesData 变量（最后回退）
-        if (typeof vehiclesData !== 'undefined') return vehiclesData;
         return {};
     }
 
@@ -601,6 +646,9 @@
                 })(route, rindex);
             });
         }
+
+        // 地图初始化完成后，尝试将之前通过 WebSocket 收到但因地图未就绪而缓存的更新应用到地图上
+        try { flushPendingWsUpdates(); } catch(e) { /* ignore */ }
     }
 
     // toggle visibility helper exposed to UI
@@ -638,36 +686,488 @@
     }
 
     function renderCharts(){
-        // 订单列表用原生ul/li渲染
+        // 简单 HTML 转义工具，防止插入不可信的 HTML
+        function escapeHtml(s){
+            try { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); } catch(e){ return ''+s; }
+        }
+
+        // 更新页面上四个订单统计的显示（通过 id 定位 .summary-num 子节点）
+        function setOrderMetric(elemId, value){
+            try {
+                var el = document.getElementById(elemId);
+                if (!el) return;
+                var num = el.querySelector('.summary-num');
+                if (!num) {
+                    // 兼容直接把数字放在元素内的情况
+                    el.textContent = value;
+                } else {
+                    num.textContent = value;
+                }
+            } catch(e){ /* ignore */ }
+        }
+
+        // 基于订单列表计算各项统计量（总数、今日已完成、在途、异常）
+        // 注：尽量兼容后端返回的多种字段命名。
+        function computeOrderCounts(list){
+            var counts = { total: 0, finishedToday: 0, inTransit: 0, abnormal: 0 };
+            if (!list || !Array.isArray(list)) return counts;
+            counts.total = list.length;
+            var today = new Date();
+            function isSameDay(d){
+                if (!d) return false;
+                try {
+                    var dt = (typeof d === 'number') ? new Date(d) : new Date(String(d));
+                    return dt.getFullYear()===today.getFullYear() && dt.getMonth()===today.getMonth() && dt.getDate()===today.getDate();
+                } catch(e){ return false; }
+            }
+
+            list.forEach(function(it){
+                try {
+                    var status = it.status || it.Status || it.orderStatus || it.state || '';
+                    var statusStr = String(status || '').trim();
+
+                    // 优先使用完成时间判断是否为“今日已完成”，兼容多个可能的字段名
+                    var finishedAt = it.finishedAt || it.finishTime || it.completedAt || it.completedTime || it.finish_at || it.completed_at;
+                    if (finishedAt && isSameDay(finishedAt)) {
+                        counts.finishedToday++;
+                    } else if (/已?完成/.test(statusStr)) {
+                        // 若没有时间字段，回退到按状态判断
+                        counts.finishedToday++;
+                    }
+
+                    if (/配送中|在途|已出库|配送中/.test(statusStr)) counts.inTransit++;
+                    // 有些系统把异常标记为 '异常' 或 '问题'，尽量宽松匹配
+                    if (/异常|问题|failed|error/i.test(statusStr)) counts.abnormal++;
+                } catch(e){ /* ignore per-item errors */ }
+            });
+            return counts;
+        }
+
+        // 订单列表用原生ul/li渲染，并在数据到达时更新顶部统计
         try {
             var orderEl = document.getElementById('orderListChart');
             if (orderEl) {
-                // 示例数据，可替换为后端/全局变量
-                var orders = [
-                    {id:'XXXX<br>-0001', type:'普件', dest:'送科学谷', status:'异常', note:'未处理<br>2025-9-11<br>18:00'},
-                    {id:'XXXX<br>-0002', type:'冷藏', dest:'送大学城', status:'配送中', note:'预计明天送达'},
-                    {id:'XXXX<br>-0003', type:'加急', dest:'送白市驿', status:'待取件', note:'已送达<br>2025-9-11<br>18:00'}
-                ];
+                // 从后端 orders-api 获取订单列表并渲染到大屏（优先使用后端数据，失败时回退到示例）
                 orderEl.innerHTML = '';
-                orders.forEach(function(o){
-                    var li = document.createElement('li');
-                    li.style.display = 'flex';
-                    li.style.alignItems = 'center';
-                    li.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
-                    li.style.padding = '6px 0 6px 0';
-                    li.style.minHeight = '48px';
-                    li.style.wordBreak = 'break-all';
-                    li.style.fontSize = '14px';
-                    li.innerHTML =
-                        '<div style="flex:1.2;text-align:center;font-weight:600;color:#cfeff5;word-break:break-all;">'+o.id+'</div>'+
-                        '<div style="flex:1;text-align:center;color:#9FD8F2;word-break:break-all;">'+o.type+'</div>'+
-                        '<div style="flex:2;text-align:center;color:#DFF6FB;word-break:break-all;">'+o.dest+'</div>'+
-                        '<div style="flex:1.2;text-align:center;color:'+(o.status==='异常'?'#ff8989':(o.status==='配送中'?'#27e227':'#7ef27e'))+';font-weight:600;word-break:break-all;">'+o.status+'</div>'+
-                        '<div style="flex:2;text-align:center;color:#94d1e8;word-break:break-all;">'+o.note+'</div>';
-                    orderEl.appendChild(li);
-                });
+                // 请求后端列表接口：GET /api/order/list
+                fetch('/api/order/list', { method: 'GET', cache: 'no-store' })
+                    .then(function(resp){
+                        if (!resp.ok) return resp.text().then(t => { throw new Error(t || resp.statusText); });
+                        return resp.json().catch(()=>({}));
+                    })
+                    .then(function(json){
+                        // 后端返回 types.OrderListResp { ordersList: [], total }
+                        var list = [];
+                        if (json) {
+                            if (Array.isArray(json)) list = json;
+                            else if (Array.isArray(json.ordersList)) list = json.ordersList;
+                            else if (Array.isArray(json.data)) list = json.data;
+                        }
+
+                        // 计算并更新指标
+                        var counts = computeOrderCounts(list);
+                        setOrderMetric('order-total', counts.total);
+                        setOrderMetric('order-finished', counts.finishedToday);
+                        setOrderMetric('order-intransit', counts.inTransit);
+                        setOrderMetric('order-abnormal', counts.abnormal);
+
+                        if (!list || list.length === 0) {
+                            // 若返回为空，显示占位文本
+                            var li0 = document.createElement('li');
+                            li0.className = 'table-empty';
+                            li0.style.padding = '8px';
+                            li0.innerText = '暂无近期订单';
+                            orderEl.appendChild(li0);
+                            return;
+                        }
+
+                        list.forEach(function(it){
+                            try {
+                                var id = it.orderId || it.OrderId || it.id || it.ID || '';
+                                var type = it.type || it.Type || '';
+                                // 优先使用收件地址作为目的地展示，若无则使用收件人字段
+                                var dest = it.address || it.Address || it.addressee || it.Addressee || '';
+                                var status = it.status || it.Status || '';
+                                var note = it.note || it.Note || '--';
+
+                                var li = document.createElement('li');
+                                li.style.display = 'flex';
+                                li.style.alignItems = 'center';
+                                li.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
+                                li.style.padding = '6px 0 6px 0';
+                                li.style.minHeight = '48px';
+                                li.style.wordBreak = 'break-all';
+                                li.style.fontSize = '14px';
+                                li.innerHTML =
+                                    '<div style="flex:1.2;text-align:center;font-weight:600;color:#cfeff5;word-break:break-all;">'+escapeHtml(id)+'</div>'+
+                                    '<div style="flex:1;text-align:center;color:#9FD8F2;word-break:break-all;">'+escapeHtml(type)+'</div>'+
+                                    '<div style="flex:2;text-align:center;color:#DFF6FB;word-break:break-all;">'+escapeHtml(dest)+'</div>'+
+                                    '<div style="flex:1.2;text-align:center;color:'+(String(status)==='异常'?'#ff8989':(String(status)==='配送中'?'#27e227':'#7ef27e'))+';font-weight:600;word-break:break-all;">'+escapeHtml(status)+'</div>'+
+                                    '<div style="flex:2;text-align:center;color:#94d1e8;word-break:break-all;">'+escapeHtml(note)+'</div>';
+                                orderEl.appendChild(li);
+                            } catch (e) {
+                                console.warn('渲染单条订单失败', e);
+                            }
+                        });
+                    })
+                    .catch(function(err){
+                        console.warn('获取订单列表失败，使用本地示例回退', err);
+                        // 回退到示例数据，保证大屏不空白
+                        var orders = [
+                            {id:'XXXX<br>-0001', type:'普件', dest:'送科学谷', status:'异常', note:'未处理<br>2025-9-11<br>18:00'},
+                            {id:'XXXX<br>-0002', type:'冷藏', dest:'送大学城', status:'配送中', note:'预计明天送达'},
+                            {id:'XXXX<br>-0003', type:'加急', dest:'送白市驿', status:'待取件', note:'已送达<br>2025-9-11<br>18:00'}
+                        ];
+
+                        // 计算并更新指标（回退数据）
+                        var counts = computeOrderCounts(orders);
+                        setOrderMetric('order-total', counts.total);
+                        setOrderMetric('order-finished', counts.finishedToday);
+                        setOrderMetric('order-intransit', counts.inTransit);
+                        setOrderMetric('order-abnormal', counts.abnormal);
+
+                        orders.forEach(function(o){
+                            var li = document.createElement('li');
+                            li.style.display = 'flex';
+                            li.style.alignItems = 'center';
+                            li.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
+                            li.style.padding = '6px 0 6px 0';
+                            li.style.minHeight = '48px';
+                            li.style.wordBreak = 'break-all';
+                            li.style.fontSize = '14px';
+                            li.innerHTML =
+                                '<div style="flex:1.2;text-align:center;font-weight:600;color:#cfeff5;word-break:break-all;">'+escapeHtml(o.id)+'</div>'+
+                                '<div style="flex:1;text-align:center;color:#9FD8F2;word-break:break-all;">'+escapeHtml(o.type)+'</div>'+
+                                '<div style="flex:2;text-align:center;color:#DFF6FB;word-break:break-all;">'+escapeHtml(o.dest)+'</div>'+
+                                '<div style="flex:1.2;text-align:center;color:'+(o.status==='异常'?'#ff8989':(o.status==='配送中'?'#27e227':'#7ef27e'))+';font-weight:600;word-break:break-all;">'+escapeHtml(o.status)+'</div>'+
+                                '<div style="flex:2;text-align:center;color:#94d1e8;word-break:break-all;">'+escapeHtml(o.note)+'</div>';
+                            orderEl.appendChild(li);
+                        });
+                    });
             }
         } catch (e) { console.warn('订单列表渲染失败', e); }
+    }
+
+    // 从后端 vehicle-api 获取车辆汇总数据并更新页面右侧的车辆统计面板
+    // 返回结构遵循 vehicle-api 的 types.VehicleSummaryResp：
+    // { total, inTransit, idle, charging, abnormal }
+    function fetchVehicleSummary(){
+        // 使用 no-store 确保获取到最新数据
+        fetch('/api/vehicles/summary', { method: 'GET', cache: 'no-store' })
+            .then(function(resp){
+                if (!resp.ok) return resp.text().then(function(t){ throw new Error(t || resp.statusText); });
+                return resp.json().catch(function(){ return {}; });
+            })
+            .then(function(json){
+                if (!json || typeof json !== 'object') return;
+                try {
+                    // 重置状态缓存
+                    _vehicleStatusCache.totalCount = json.total || 0;
+                    _vehicleStatusCache.statusCounts = {
+                        '在途': json.inTransit || 0,
+                        '空闲': json.idle || 0,
+                        '充电中': json.charging || 0,
+                        '异常': json.abnormal || 0
+                    };
+                    // 清空车辆缓存，等待 WebSocket 更新
+                    _vehicleStatusCache.vehicles = {};
+
+                    // 更新界面显示
+                    document.getElementById('total-value').textContent = _vehicleStatusCache.totalCount;
+                    document.getElementById('onroad-value').textContent = _vehicleStatusCache.statusCounts['在途'];
+                    document.getElementById('idle-value').textContent = _vehicleStatusCache.statusCounts['空闲'];
+                    document.getElementById('charging-value').textContent = _vehicleStatusCache.statusCounts['充电中'];
+                    document.getElementById('abnormal-value').textContent = _vehicleStatusCache.statusCounts['异常'];
+                } catch(e){ console.warn('渲染车辆汇总数据失败', e); }
+            })
+            .catch(function(err){
+                console.warn('获取车辆汇总失败，保留现有数据显示', err);
+            });
+    }
+
+    // ================= WebSocket 客户端逻辑 =================
+    // 说明：
+    // - 连接到后端 /api/vehicle/ws，接收 JSON 格式的车辆实时状态广播
+    // - 将接收到的数据映射到地图上的车辆 marker（存在则移动，不存在则创建）
+    // - 在页面右上角显示一个 WS 连接状态指示器，便于调试
+
+    // 规范化经纬度：有些上报为整数（乘以1e7），若数值异常大则除以1e7
+    function normalizeCoord(v) {
+        if (v == null) return 0;
+        var n = Number(v);
+        if (!isFinite(n)) return 0;
+        // 若大于 1000，视为被放大（例如 1063360350 表示 106.3360350）
+        if (Math.abs(n) > 1000) return n / 1e7;
+        return n;
+    }
+
+    // 创建或更新车辆 marker（保证 amap 就绪时生效）
+    const _pendingWsUpdates = {}; // vehicleId -> {lng,lat,extra}
+    function createOrUpdateMarker(vehicleId, lng, lat, extra) {
+        try {
+            var x = normalizeCoord(lng);
+            var y = normalizeCoord(lat);
+            if (!amap || typeof AMap === 'undefined') {
+                // map 未就绪，缓存更新，等待 initMap 时再处理
+                _pendingWsUpdates[vehicleId] = { lng: x, lat: y, extra: extra };
+                return;
+            }
+
+            var marker = vehicleMarkers[vehicleId];
+            if (marker && marker.setPosition) {
+                // 更新位置和标题
+                try { 
+                    marker.setPosition([x, y]); 
+                    // 更新标记标题（鼠标悬停时显示）
+                    if (extra) {
+                        var title = [
+                            extra.plateNumber ? ('车牌: ' + extra.plateNumber) : ('ID: ' + vehicleId),
+                            extra.type ? ('类型: ' + extra.type) : '',
+                            extra.status ? ('状态: ' + extra.status) : '',
+                            extra.velocity ? ('速度: ' + extra.velocity + 'km/h') : ''
+                        ].filter(Boolean).join('\n');
+                        marker.setTitle(title);
+                    }
+                    
+                    // 根据状态更新图标样式
+                    if (extra && extra.status) {
+                        var img = marker.getContent();
+                        if (img && img.style) {
+                            // 根据状态设置不同的滤镜效果
+                            switch(extra.status.toLowerCase()) {
+                                case '空闲':
+                                    img.style.filter = 'hue-rotate(120deg)'; // 绿色
+                                    break;
+                                case '异常':
+                                    img.style.filter = 'hue-rotate(0deg)'; // 红色
+                                    break;
+                                case '充电中':
+                                    img.style.filter = 'hue-rotate(180deg)'; // 蓝色
+                                    break;
+                                default:
+                                    img.style.filter = ''; // 默认颜色
+                            }
+                        }
+                    }
+                } catch(e){}
+                return;
+            }
+
+            // 创建 img 元素作为 marker 内容，和 initMap 中保持一致样式
+            var img = document.createElement('img');
+            img.src = VEHICLE_ICON;
+            img.style.width = '32px';
+            img.style.height = '32px';
+            img.style.display = 'block';
+            img.style.transform = 'rotate(0deg)';
+
+            // 构建标记标题（鼠标悬停显示）
+            var title = [
+                extra && extra.plateNumber ? ('车牌: ' + extra.plateNumber) : ('ID: ' + vehicleId),
+                extra && extra.type ? ('类型: ' + extra.type) : '',
+                extra && extra.status ? ('状态: ' + extra.status) : '',
+                extra && extra.velocity ? ('速度: ' + extra.velocity + 'km/h') : ''
+            ].filter(Boolean).join('\n');
+
+            var m = new AMap.Marker({
+                position: [x, y],
+                title: title,
+                content: img,
+                offset: new AMap.Pixel(-16, -16),
+                zIndex: 2000
+            });
+            m.setMap(amap);
+            m.on('click', function(){
+                try {
+                    if (typeof window.updateVehiclePanel === 'function') {
+                        window.updateVehiclePanel({ vehicleId: vehicleId });
+                    }
+                } catch(e){}
+            });
+            vehicleMarkers[vehicleId] = m;
+        } catch (e) { console.warn('createOrUpdateMarker failed', e); }
+    }
+
+    // 将 pending 更新应用到地图（在 initMap 完成后调用）
+    function flushPendingWsUpdates(){
+        try {
+            Object.keys(_pendingWsUpdates).forEach(function(vid){
+                var u = _pendingWsUpdates[vid];
+                createOrUpdateMarker(vid, u.lng, u.lat, u.extra);
+                delete _pendingWsUpdates[vid];
+            });
+        } catch(e){}
+    }
+
+    // 在页面上创建一个 WebSocket 状态指示器（右上角）
+    var _wsStatusEl = null;
+    function ensureWsStatusEl(){
+        if (_wsStatusEl) return _wsStatusEl;
+        var el = document.createElement('div');
+        el.id = 'ws-status-badge';
+        el.style.position = 'fixed';
+        el.style.top = '12px';
+        el.style.right = '12px';
+        el.style.padding = '6px 10px';
+        el.style.background = 'rgba(0,0,0,0.6)';
+        el.style.color = '#fff';
+        el.style.borderRadius = '6px';
+        el.style.fontSize = '13px';
+        el.style.zIndex = 9999;
+        el.style.backdropFilter = 'blur(4px)';
+        el.textContent = 'WS: disconnected';
+        document.body.appendChild(el);
+        _wsStatusEl = el;
+        return el;
+    }
+
+    function setWsStatus(status){
+        var el = ensureWsStatusEl();
+        el.textContent = 'WS: ' + status;
+        switch(status){
+            case 'connected': el.style.background = 'rgba(24,128,24,0.9)'; break;
+            case 'connecting': el.style.background = 'rgba(200,140,0,0.9)'; break;
+            case 'disconnected': el.style.background = 'rgba(120,12,12,0.9)'; break;
+            default: el.style.background = 'rgba(0,0,0,0.6)'; break;
+        }
+    }
+
+    // 初始化 WebSocket 并处理消息，包含自动重连机制
+    function initVehicleWS(){
+        ensureWsStatusEl();
+        var scheme = (location.protocol === 'https:') ? 'wss' : 'ws';
+        // 使用相同 origin（host:port），若你通过反向代理可直接使用相对路径
+        var host = location.hostname || 'localhost';
+        var port = location.port ? (':' + location.port) : '';
+        var url = scheme + '://' + host + port + '/api/vehicle/ws';
+
+        var wsConn = null;
+        var reconnectDelay = 1000; // 起始重连间隔 ms
+        var maxDelay = 30000;
+
+        function connect(){
+            setWsStatus('connecting');
+            try {
+                wsConn = new WebSocket(url);
+            } catch(e){
+                setWsStatus('disconnected');
+                scheduleReconnect();
+                return;
+            }
+
+            wsConn.onopen = function(){
+                setWsStatus('connected');
+                reconnectDelay = 1000; // reset
+                // flush any pending marker updates
+                flushPendingWsUpdates();
+            };
+
+            wsConn.onmessage = function(ev){
+                try {
+                    var data = JSON.parse(ev.data);
+                    // 期望字段可能为多种命名：vehicleId / vehicleid / id，但必须有一个
+                    var vid = data.vehicleId ?? data.vehicleid ?? data.id ?? null;
+                    if (!vid) return;
+
+                    // 支持多种经纬字段命名：lon / longitude / lng，如未上报则显示 '--'
+                    var lon = data.lon ?? data.longitude ?? data.lng ?? null;
+                    var lat = data.lat ?? data.latitude ?? data.lat ?? null;
+
+                    // 仅在经纬度有效时创建或移动 marker，同时更新面板信息
+                    if (lon !== null && lat !== null) {
+                        // 从 WebSocket 数据中提取并转换车辆类型
+                        var typeText = '普通';  // 默认类型
+                        if (data.type === 2) typeText = '冷链';
+                        else if (data.type === 3) typeText = '大件';
+
+                        // 确定车辆状态（根据 status 字段和其他信息）
+                        var status = data.status;
+                        if (!status) {
+                            // 如果后端未直接提供状态，尝试根据其他信息推断
+                            if (data.battery < 20) status = '充电中';
+                            else if (data.velocityGNSS > 0 || data.velocity > 0) status = '在途';
+                            else status = '空闲';
+                        }
+
+                        // 更新车辆面板信息
+                        updateVehiclePanel({
+                            vehicleId: vid,
+                            plateNumber: data.plateNumber ?? '--',  // 车牌号
+                            vehicleType: typeText,  // 已转换的车辆类型文本
+                            vehicleCapacity: (data.capacity ? data.capacity + '立方' : '--'),  // 容量
+                            vehicleBattery: (data.battery ? data.battery + '%' : '--'),  // 电量
+                            vehicleSpeed: ((data.velocityGNSS || data.velocity || 0) + 'km/h'),  // 速度
+                            vehicleRoute: data.routeId ?? '--',  // 路线
+                            vehicleEta: data.eta ?? '--',  // 预计到达时间
+                            status: status  // 状态
+                        });
+
+                        // 更新地图上的车辆标记
+                        createOrUpdateMarker(vid, lon, lat, {
+                            heading: data.heading,
+                            velocity: data.velocityGNSS || data.velocity,
+                            plateNumber: data.plateNumber,  // 添加车牌号到标记信息中
+                            type: typeText,  // 添加车辆类型到标记信息中
+                            status: data.status  // 添加状态信息
+                        });
+                    }
+
+                    // 解析速度并格式化为 km/h（VEH2CLOUD_STATE 中 velocity 单位为 0.01 m/s）
+                    var speedVal = data.velocity ?? data.velocityGNSS ?? null;
+                    var speedStr = '--';
+                    if (speedVal !== null && !isNaN(Number(speedVal))) {
+                        // 把 0.01 m/s -> km/h: value * 0.01 (m/s) * 3.6 = value * 0.036
+                        try { speedStr = Math.round(Number(speedVal) * 0.036) + ' km/h'; } catch(e){ speedStr = '--' }
+                    }
+
+                    // 目的地展示：若存在 destLon/destLat，在面板显示一个简短说明
+                    var routeStr = '--';
+                    if (typeof data.destLon !== 'undefined' && typeof data.destLat !== 'undefined') {
+                        var dlon = normalizeCoord(data.destLon);
+                        var dlat = normalizeCoord(data.destLat);
+                        if (dlon && dlat) routeStr = '目的地: ' + dlon.toFixed(6) + ', ' + dlat.toFixed(6);
+                    } else if (Array.isArray(data.passPoints) && data.passPoints.length > 0) {
+                        routeStr = '途经点: ' + data.passPoints.length + ' 个';
+                    }
+
+                    // 更新右侧车辆信息面板（只传递需要更新的字段，避免覆盖面板的其他统计）
+                    try {
+                        if (typeof window.updateVehiclePanel === 'function') {
+                            var panelPayload = { vehicleId: vid };
+                            if (speedStr) panelPayload.vehicleSpeed = speedStr;
+                            if (routeStr) panelPayload.vehicleRoute = routeStr;
+                            // 若上报了电量字段（某些设备会附带 battery），则同步
+                            if (typeof data.battery !== 'undefined') panelPayload.vehicleBattery = ('' + data.battery) + '%';
+                            // 其余可能有用的字段可在 future 扩展
+                            window.updateVehiclePanel(panelPayload);
+                        }
+                    } catch(e){ console.warn('updateVehiclePanel failed', e); }
+                } catch(e){
+                    console.warn('ws message parse error', e, ev.data);
+                }
+            };
+
+            wsConn.onerror = function(e){
+                console.error('ws error', e);
+            };
+
+            wsConn.onclose = function(){
+                setWsStatus('disconnected');
+                scheduleReconnect();
+            };
+        }
+
+        function scheduleReconnect(){
+            setTimeout(function(){
+                reconnectDelay = Math.min(reconnectDelay * 1.5, maxDelay);
+                connect();
+            }, reconnectDelay);
+        }
+
+        // 开始首次连接
+        connect();
+        // 返回关闭函数（未使用，但方便将来扩展）
+        return function close(){ if (wsConn) wsConn.close(); };
     }
 
     function onResize(){ Object.values(charts).forEach(c=>c && c.resize && c.resize()); }

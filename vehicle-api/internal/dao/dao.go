@@ -206,62 +206,12 @@ func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, 
 
 // QueryAllVehiclesLatest 返回所有车辆的最新状态（受最近时间窗口限制）
 func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VEH2CLOUD_STATE, error) {
-	// 该 Flux 按 vehicleId 分组并取最后一条记录
-	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: -30d) |> filter(fn:(r)=> r._measurement=="vehicle_status") |> group(columns:["vehicleId"]) |> last() |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")`, d.Bucket)
-	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
-	result, err := queryAPI.Query(context.Background(), flux)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]types.VEH2CLOUD_STATE, 0)
-	for result.Next() {
-		rec := result.Record()
-		var s types.VEH2CLOUD_STATE
-		if v := rec.ValueByKey("vehicleId"); v != nil {
-			if vs, ok := v.(string); ok {
-				s.VehicleId = vs
-			}
-		}
-		if v := rec.ValueByKey("velocity"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				s.Velocity = uint16(t)
-			case float64:
-				s.Velocity = uint16(t)
-			}
-		}
-		if v := rec.ValueByKey("longitude"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				s.Position.Longitude = uint32(t)
-			case float64:
-				s.Position.Longitude = uint32(t)
-			}
-		}
-		if v := rec.ValueByKey("latitude"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				s.Position.Latitude = uint32(t)
-			case float64:
-				s.Position.Latitude = uint32(t)
-			}
-		}
-		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
-		// 解析 passPoints 字段（途经点 JSON）
-		if v := rec.ValueByKey("passPoints"); v != nil {
-			if sstr, ok := v.(string); ok && sstr != "" {
-				var pts []types.Position2D
-				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
-					s.PassPoints = pts
-				}
-			}
-		}
-		out = append(out, s)
-	}
-	if result.Err() != nil {
-		return nil, result.Err()
-	}
-	return out, nil
+	// 为避免 pivot 时因不同写入者导致同一字段出现不同类型（string vs unsigned）而报错，
+	// 复用更健壮的按时间范围查询实现：QueryVehiclesLatestInRange
+	// 使用与之前相同的默认时间窗口（最近 30 天）来保持行为一致
+	start := time.Now().Add(-30 * 24 * time.Hour)
+	end := time.Now()
+	return d.QueryVehiclesLatestInRange(start, end)
 }
 
 // QueryVehiclesLatestInRange 返回在指定时间区间内每辆车的最新状态
