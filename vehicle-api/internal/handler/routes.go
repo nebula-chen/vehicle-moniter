@@ -26,6 +26,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
+				Path:    "/api/vehicle/state",
+				Handler: HandleVehicleStateHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodGet,
 				Path:    "/api/vehicle/ws",
 				Handler: HandleWebSocketHandler(serverCtx),
 			},

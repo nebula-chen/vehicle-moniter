@@ -5,10 +5,9 @@ import "github.com/zeromicro/go-zero/rest"
 type Config struct {
 	rest.RestConf
 	InfluxDBConfig InfluxDB
-	// TCPPort 用于配置车辆协议监听端口, 格式例如 ":6000"
-	TCPPort string `yaml:"TCPPort" json:"TCPPort"`
-	// MySQL 配置，用于持久化任务记录（任务、统计等）
-	MySQL MySQLConfig `yaml:"mysql" json:"mysql"`
+	MySQL          MySQLConfig    `yaml:"mysql" json:"mysql"`       // MySQL 配置，用于持久化任务记录（任务、统计等）
+	VEHState       VEHStateConfig `yaml:"VEHState" json:"VEHState"` // VEHState 配置，用于连接外部车辆状态API获取实时车辆状态
+
 }
 
 type InfluxDB struct {
@@ -33,4 +32,10 @@ type MySQLConfig struct {
 	Password string `yaml:"password" json:"password"`
 	Database string `yaml:"database" json:"database"`
 	Charset  string `yaml:"charset" json:"charset"`
+}
+
+// VEHStateConfig 配置用于连接外部车辆状态API
+type VEHStateConfig struct {
+	URL            string `yaml:"url" json:"url"`                                // WebSocket服务器地址，如 ws://host:port/infraCloud/openapi/regionCloud/v1/ws/can
+	HeartbeatTimer int    `yaml:"heartbeatTimer,optional" json:"heartbeatTimer"` // 心跳间隔（秒），0表示不启用心跳，默认为0
 }

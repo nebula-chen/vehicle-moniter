@@ -1,7 +1,7 @@
 Name: vehicle-api
 Host: 0.0.0.0
 Port: 18888
-TCPPort: ":6000"
+
 InfluxDBConfig:
   Host: "influxdb"
   Port: "8086"
@@ -15,6 +15,7 @@ InfluxDBConfig:
   Timeout: 5s
   BatchSize: 100
   FlushInterval: 5
+
 MySQL:
   host: "mysql"        # 在 docker-compose 中定义的服务名
   port: "3306"
@@ -22,3 +23,7 @@ MySQL:
   password: "12345678"
   database: "vehicle"
   charset: "utf8mb4"
+
+VEHState:
+  url: "ws://infra-cloud:8888/infraCloud/openapi/regionCloud/v1/ws/can"  # 外部车辆状态API的WebSocket URL
+  heartbeatTimer: 5  # 心跳间隔（秒），0表示不启用

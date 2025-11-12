@@ -11,6 +11,7 @@ import (
 	"vehicle-api/internal/dao"
 	"vehicle-api/internal/processor"
 	"vehicle-api/internal/types"
+	"vehicle-api/internal/vehiclestate"
 	"vehicle-api/internal/websocket"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -19,13 +20,14 @@ import (
 )
 
 type ServiceContext struct {
-	Config       config.Config
-	WSHub        *websocket.Hub
-	Dao          *dao.InfluxDao
-	MySQLDB      *sql.DB
-	MySQLDao     *dao.MySQLDao
-	Processor    processor.Processor
-	OnlineDrones sync.Map // key: uasID, value: time.Time
+	Config         config.Config
+	WSHub          *websocket.Hub
+	Dao            *dao.InfluxDao
+	MySQLDB        *sql.DB
+	MySQLDao       *dao.MySQLDao
+	Processor      processor.Processor
+	VEHStateClient *vehiclestate.Client
+	OnlineDrones   sync.Map // key: uasID, value: time.Time
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -90,6 +92,40 @@ func NewServiceContext(c config.Config) *ServiceContext {
 			time.Sleep(10 * time.Second)
 		}
 	}()
+
+	// 初始化 VEHState 客户端
+	if c.VEHState.URL != "" {
+		apiClient := vehiclestate.NewClient(
+			c.VEHState.URL,
+			func(resp *types.VehicleStateResp) error {
+				// 处理来自车辆状态API的消息响应
+				// 这里可以进一步对接收到的数据进行处理，例如广播到WebSocket客户端
+				logx.Debugf("Received VEHState response: %+v", resp)
+				// 可以在这里根据需要进行数据广播或处理
+				return nil
+			},
+			func(err error) {
+				// 处理错误
+				logx.Errorf("VEHState error: %v", err)
+			},
+			func() {
+				// 处理关闭
+				logx.Infof("VEHState client closed")
+			},
+		)
+
+		// 建立连接
+		if err := apiClient.Connect(context.Background()); err != nil {
+			logx.Errorf("Failed to connect to VEHState: %v", err)
+		} else {
+			// 启动读写循环
+			apiClient.Run(context.Background())
+			ctx.VEHStateClient = apiClient
+			logx.Infof("VEHState client initialized successfully")
+		}
+	} else {
+		logx.Errorf("VEHState URL not configured")
+	}
 
 	return ctx
 }
@@ -195,7 +231,46 @@ func createVehicleListTable(db *sql.DB) error {
 	return err
 }
 
+// ProcessVehicleState 处理来自WebSocket API的车辆状态数据
+// 通过Processor持久化到数据库，并广播到WebSocket客户端
+func (sc *ServiceContext) ProcessVehicleState(data *types.VehicleStateData) error {
+	if sc == nil || data == nil {
+		return nil
+	}
+
+	logx.Debugf("处理车辆状态 vehicle=%s ts=%d lon=%.6f lat=%.6f speed=%.2f",
+		data.VehicleId, data.Timestamp, data.Lon, data.Lat, data.Speed)
+
+	// 通过Processor将状态持久化到MySQL
+	if sc.Processor != nil {
+		if err := sc.Processor.ProcessState(data); err != nil {
+			logx.Errorf("Processor处理状态失败 vehicle=%s: %v", data.VehicleId, err)
+		}
+	}
+
+	// 广播最新状态到WebSocket hub
+	if sc.WSHub != nil {
+		payload := map[string]interface{}{
+			"vehicleId": data.VehicleId,
+			"timestamp": data.Timestamp,
+			"lon":       data.Lon,
+			"lat":       data.Lat,
+			"speed":     data.Speed,
+			"heading":   data.Heading,
+			"driveMode": data.DriveMode,
+			"accelPos":  data.AccelPos,
+			"brakePos":  data.BrakePos,
+		}
+
+		bs, _ := json.Marshal(payload)
+		sc.WSHub.Broadcast <- bs
+	}
+
+	return nil
+}
+
 // ProcessState 将 VEH2CLOUD_STATE 写入 Influx，并通过 WebSocket 广播最新状态
+// 该方法保留用于后向兼容，现已不再使用（改为使用ProcessVehicleState）
 func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 	if sc == nil {
 		return nil
@@ -298,15 +373,6 @@ func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
 		sc.WSHub.Broadcast <- bs
 	}
 
-	// 将该状态交给 Processor 处理（如持久化轨迹点、任务识别）
-	// 这样 TCP 上报路径会直接触发任务检测与入库
-	if sc.Processor != nil {
-		if err := sc.Processor.ProcessState(req); err != nil {
-			logx.Errorf("processor process state error: %v", err)
-		}
-	}
-
-	// TODO: parsing planningLocs, detectionData, custom cargo fields
 	return nil
 }
 
