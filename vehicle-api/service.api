@@ -49,44 +49,44 @@ type VEH2CLOUD_STATE {
 }
 
 type VehicleStateData {
-	CategoryCode    int      `json:"categoryCode"` // 车辆类型编码
-	VehicleId       string   `json:"vehicleId"` // 车编号
-	Timestamp       uint64   `json:"timestamp"` // GNSS时间戳（ms），已转换为东八区 UTC 时间戳，0xFFFFFFFFFFFFFFFF 表示异常
-	Lon             float64  `json:"lon"` // 经度
-	Lat             float64  `json:"lat"` // 纬度
-	Speed           float64  `json:"speed"` // 车速 单位：0.01m/s（协议中），此处使用浮点表示实际值
-	Heading         float64  `json:"heading"` // 方向（航向角）
-	DriveMode       int      `json:"driveMode"` // 驾驶模式 枚举
-	TapPos          int      `json:"tapPos"` // 挡位
-	AccelPos        float64  `json:"accelPos"` // 油门开度 单位：0.1%
-	BrakeFlag       int      `json:"brakeFlag"` // 制动踏板开关 0/1
-	BrakePos        float64  `json:"brakePos"` // 制动踏板开度 单位：0.1%
-	FuelConsumption float64  `json:"fuelConsumption"` // 油耗 单位：0.01L/100km
-	AbsFlag         int      `json:"absFlag"` // ABS状态
-	TcsFlag         int      `json:"tcsFlag"` // TCS状态
-	EspFlag         int      `json:"espFlag"` // ESP状态
-	LkaFlag         int      `json:"lkaFlag"` // LKA状态
-	AccMode         int      `json:"accMode"` // ACC工作模式
-	FcwFlag         int      `json:"fcwFlag"` // FCW状态
-	LdwFlag         int      `json:"ldwFlag"` // LDW状态
-	AebFlag         int      `json:"aebFlag"` // AEB状态
-	LcaFlag         int      `json:"lcaFlag"` // LCA状态
-	DmsFlag         int      `json:"dmsFlag"` // DMS状态
-	Soc             float64  `json:"soc"` // 电池剩余电量 单位：0.01%
-	Mileage         float64  `json:"mileage"` // 里程
-	AccelerationH   float64  `json:"accelerationH"` // 横向加速度
-	AccelerationV   float64  `json:"accelerationV"` // 纵向加速度
-	LowBeam         int      `json:"lowBeam"` // 近光灯状态 0/1
-	HighBeam        int      `json:"highBeam"` // 远光灯状态 0/1
-	LeftTurn        int      `json:"leftTurn"` // 左转灯状态 0/1
-	RightTurn       int      `json:"rightTurn"` // 右转灯状态 0/1
-	HazardSignal    int      `json:"hazardSignal"` // 应急指示灯（双闪） 0/1
-	Automatic       int      `json:"automatic"` // 自动高亮灯 0/1
-	DaytimeRunning  int      `json:"daytimeRunning"` // 日行灯 0/1
-	FogLight        int      `json:"fogLight"` // 雾灯 0/1
-	Parking         int      `json:"parking"` // 停车灯 0/1
-	VehFault        []uint32 `json:"vehFault"` // 车辆故障状态 按位定义，返回按位掩码整数数组（Integer[]），若未上报返回空
-	Doors           []uint32 `json:"doors"` // 车门状态 按位定义，返回按位掩码整数数组（Integer[]），若未上报返回空
+	CategoryCode    int     `json:"categoryCode"` // 车辆类型编码
+	VehicleId       string  `json:"vehicleId"` // 车编号
+	Timestamp       uint64  `json:"timestamp"` // GNSS时间戳（ms），已转换为东八区 UTC 时间戳，0xFFFFFFFFFFFFFFFF 表示异常
+	Lon             float64 `json:"lon"` // 经度
+	Lat             float64 `json:"lat"` // 纬度
+	Speed           float64 `json:"speed"` // 车速 单位：0.01m/s（协议中），此处使用浮点表示实际值
+	Heading         float64 `json:"heading"` // 方向（航向角）
+	DriveMode       int     `json:"driveMode"` // 驾驶模式 枚举
+	TapPos          int     `json:"tapPos"` // 挡位
+	AccelPos        float64 `json:"accelPos"` // 油门开度 单位：0.1%
+	BrakeFlag       int     `json:"brakeFlag"` // 制动踏板开关 0/1
+	BrakePos        float64 `json:"brakePos"` // 制动踏板开度 单位：0.1%
+	FuelConsumption float64 `json:"fuelConsumption"` // 油耗 单位：0.01L/100km
+	AbsFlag         int     `json:"absFlag"` // ABS状态
+	TcsFlag         int     `json:"tcsFlag"` // TCS状态
+	EspFlag         int     `json:"espFlag"` // ESP状态
+	LkaFlag         int     `json:"lkaFlag"` // LKA状态
+	AccMode         int     `json:"accMode"` // ACC工作模式
+	FcwFlag         int     `json:"fcwFlag"` // FCW状态
+	LdwFlag         int     `json:"ldwFlag"` // LDW状态
+	AebFlag         int     `json:"aebFlag"` // AEB状态
+	LcaFlag         int     `json:"lcaFlag"` // LCA状态
+	DmsFlag         int     `json:"dmsFlag"` // DMS状态
+	Soc             float64 `json:"soc"` // 电池剩余电量 单位：0.01%
+	Mileage         float64 `json:"mileage"` // 里程
+	AccelerationH   float64 `json:"accelerationH"` // 横向加速度
+	AccelerationV   float64 `json:"accelerationV"` // 纵向加速度
+	LowBeam         int     `json:"lowBeam"` // 近光灯状态 0/1
+	HighBeam        int     `json:"highBeam"` // 远光灯状态 0/1
+	LeftTurn        int     `json:"leftTurn"` // 左转灯状态 0/1
+	RightTurn       int     `json:"rightTurn"` // 右转灯状态 0/1
+	HazardSignal    int     `json:"hazardSignal"` // 应急指示灯（双闪） 0/1
+	Automatic       int     `json:"automatic"` // 自动高亮灯 0/1
+	DaytimeRunning  int     `json:"daytimeRunning"` // 日行灯 0/1
+	FogLight        int     `json:"fogLight"` // 雾灯 0/1
+	Parking         int     `json:"parking"` // 停车灯 0/1
+	VehFault        int     `json:"vehFault"` // 车辆故障状态 按位定义，返回按位掩码整数数组（Integer[]），若未上报返回空
+	Doors           []int   `json:"doors"` // 车门状态 按位定义，返回按位掩码整数数组（Integer[]），若未上报返回空
 }
 
 // VehicleStateReq 表示车辆状态接口的入参

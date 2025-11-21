@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"vehicle-api/internal/apiclient"
 	"vehicle-api/internal/config"
 	"vehicle-api/internal/dao"
 	"vehicle-api/internal/processor"
 	"vehicle-api/internal/types"
-	"vehicle-api/internal/vehiclestate"
 	"vehicle-api/internal/websocket"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -26,7 +26,8 @@ type ServiceContext struct {
 	MySQLDB        *sql.DB
 	MySQLDao       *dao.MySQLDao
 	Processor      processor.Processor
-	VEHStateClient *vehiclestate.Client
+	VEHStateClient *apiclient.VEHStateClient
+	VEHInfoClient  *apiclient.VEHInfoClient
 	OnlineDrones   sync.Map // key: uasID, value: time.Time
 }
 
@@ -95,33 +96,60 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	// 初始化 VEHState 客户端
 	if c.VEHState.URL != "" {
-		apiClient := vehiclestate.NewClient(
+		apiClient := apiclient.NewVEHStateClient(
 			c.VEHState.URL,
+			c.AppId,
+			c.Key,
+			c.VEHState.HeartbeatTimer,
 			func(resp *types.VehicleStateResp) error {
 				// 处理来自车辆状态API的消息响应
 				// 这里可以进一步对接收到的数据进行处理，例如广播到WebSocket客户端
-				logx.Debugf("Received VEHState response: %+v", resp)
+				logx.Infof("收到 VEHState 响应: %+v", resp)
 				// 可以在这里根据需要进行数据广播或处理
 				return nil
 			},
 			func(err error) {
 				// 处理错误
-				logx.Errorf("VEHState error: %v", err)
+				logx.Errorf("VEHState 错误: %v", err)
 			},
 			func() {
 				// 处理关闭
-				logx.Infof("VEHState client closed")
+				logx.Infof("VEHState 客户端已关闭")
 			},
 		)
 
 		// 建立连接
 		if err := apiClient.Connect(context.Background()); err != nil {
-			logx.Errorf("Failed to connect to VEHState: %v", err)
+			logx.Errorf("连接 VEHState 失败: %v", err)
 		} else {
 			// 启动读写循环
 			apiClient.Run(context.Background())
+
+			// 订阅 VehicleId=I1000103，持续接收该车辆状态推送
+			if err := apiClient.SubscribeVehicle("I1000103"); err != nil {
+				logx.Errorf("订阅 VehicleId=I1000103 失败: %v", err)
+			} else {
+				logx.Infof("已订阅车辆状态 VehicleId=I1000103")
+			}
 			ctx.VEHStateClient = apiClient
-			logx.Infof("VEHState client initialized successfully")
+			logx.Infof("VEHState 客户端初始化成功")
+
+			// 启动自动请求协程：定期向 VEHState 服务发送查询请求以触发状态下发
+			go func(sc *ServiceContext, client *apiclient.VEHStateClient) {
+				// 等待短暂时间以确保连接/订阅稳定
+				time.Sleep(3 * time.Second)
+				ticker := time.NewTicker(30 * time.Second)
+				defer ticker.Stop()
+				for {
+					// 发送一次全量或空过滤请求，依赖服务端处理空 vehicleId 为广播或按需返回
+					req := &types.VehicleStateReq{VehicleId: "I1000103"}
+					if err := client.SendRequest(req); err != nil {
+						logx.Errorf("VEHState SendRequest error: %v", err)
+					}
+					// 等待下一个周期
+					<-ticker.C
+				}
+			}(ctx, apiClient)
 		}
 	} else {
 		logx.Errorf("VEHState URL not configured")
