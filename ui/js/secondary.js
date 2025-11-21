@@ -652,13 +652,13 @@ function openStationsAndShowDetail(stationId) {
         const page = container && container.getAttribute('data-page');
         if (page !== 'stations-manage') return;
 
-        // fill station id filter and call filterWarehouse
+        // fill station id filter and call filterStations
         const el = document.getElementById('filter-stationId');
         if (el) {
             el.value = stationId || '';
         }
         // run filter to render the matching station
-        filterWarehouse();
+        filterStations();
 
         // after rendering, find the table row with this id and open detail
         setTimeout(() => {
@@ -681,7 +681,7 @@ function openStationsAndShowDetail(stationId) {
     } catch (e) { console.warn('openStationsAndShowDetail failed', e); }
 }
 
-// Helper for stations-io page: set station filter, run filterStation and try to activate the created tab
+// Helper for stations-io page: set station filter, run getStationById and try to activate the created tab
 function openStationsIOAndShowTab(stationId) {
     try {
         const container = document.querySelector('.container');
@@ -691,7 +691,7 @@ function openStationsIOAndShowTab(stationId) {
         const el = document.getElementById('filter-stationId');
         if (el) el.value = stationId || '';
         // run filter to create/activate tab
-        try { filterStation(); } catch (e) { /* ignore */ }
+        try { getStationById(); } catch (e) { /* ignore */ }
 
         // after rendering, try to ensure the tab/pane is active
         setTimeout(() => {
@@ -838,8 +838,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (document.getElementById('filter-stationId')) {
                     // bind form if present
                     const filterForm = document.getElementById('filterForm');
-                    if (filterForm) filterForm.addEventListener('submit', (e)=>{ e.preventDefault(); filterWarehouse(); });
-                    try { filterWarehouse(); } catch(e) { console.error('filterWarehouse failed', e); }
+                    if (filterForm) filterForm.addEventListener('submit', (e)=>{ e.preventDefault(); filterStations(); });
+                    try { filterStations(); } catch(e) { console.error('filterStations failed', e); }
                 }
             } catch(e) { /* ignore */ }
 
@@ -921,9 +921,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 // bind stations filter form
                 const filterForm = document.getElementById('filterForm');
-                if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterWarehouse(); });
+                if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterStations(); });
                 // initial render
-                try { filterWarehouse(); } catch (e) { console.error('filterWarehouse failed', e); }
+                try { filterStations(); } catch (e) { console.error('filterStations failed', e); }
 
                 // if URL contains station param, apply it and open detail
                 try {
@@ -1030,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const page = container && container.getAttribute('data-page');
         if (page === 'stations-io') {
             const filterForm = document.getElementById('filterForm');
-            if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); filterStation(); });
+            if (filterForm) filterForm.addEventListener('submit', (e) => { e.preventDefault(); getStationById(); });
             // if URL contains station param, open the corresponding tab in stations-io
             try {
                 const params = new URLSearchParams(window.location.search);
@@ -1381,7 +1381,7 @@ function normalizeVehicles(src) {
 }
 
 // 仓库/门店筛选与渲染（stations-manage.html 使用）
-function filterWarehouse() {
+function filterStations() {
     const chkWarehouse = document.querySelector('input[type=checkbox][data-type="warehouse"]');
     const chkStore = document.querySelector('input[type=checkbox][data-type="store"]');
     const id = (document.getElementById('filter-stationId') && document.getElementById('filter-stationId').value.trim()) || '';
@@ -1902,7 +1902,7 @@ try { document.addEventListener('DOMContentLoaded', bindCreateGridMemberForm); }
 
 
 // 在 stations-io 页面使用的筛选函数：查找 WAREHOUSES/STORES 并创建/切换标签页
-function filterStation() {
+function getStationById() {
     const input = document.getElementById('filter-stationId');
     if (!input) return;
     const id = input.value.trim();
@@ -2375,4 +2375,302 @@ function createVehicle(payload){
 function createRoute(payload){
     return postCreateResource('/api/route/create', payload);
 }
+
+// ----------------- 网格员子标签页功能（从 gridmember-tasks.html 迁移） -----------------
+// 说明：将原来内联在 gridmember-tasks.html 的脚本迁移到此处，便于复用与维护。
+
+function getGridMemberById() {
+    // 避免与函数名冲突，页面中的输入 id 为 gmIdInput
+    const el = document.getElementById('gmIdInput');
+    if (!el) return;
+    const id = el.value.trim();
+    if (!id) {
+        if (typeof showToast === 'function') showToast('请输入网格员编号');
+        return;
+    }
+
+    if (typeof fetchGridMembers !== 'function') {
+        console.warn('fetchGridMembers 未定义，无法查询网格员');
+        if (typeof showToast === 'function') showToast('功能暂不可用');
+        return;
+    }
+
+    fetchGridMembers({ id }).then(list => {
+        if (!Array.isArray(list) || list.length === 0) {
+            if (typeof showToast === 'function') showToast('未找到对应网格员');
+            return;
+        }
+        const gm = list[0];
+        createOrActivateGMTab(gm);
+    }).catch(err => {
+        console.error(err);
+        if (typeof showToast === 'function') showToast('查询失败');
+    });
+}
+
+function createOrActivateGMTab(item) {
+    if (!item) return;
+    const tabs = document.getElementById('inner-tabs');
+    const content = document.getElementById('tab-content');
+    if (!tabs || !content) return;
+
+    const id = String(item.id || item.gmId || item.code || item.codeId || '');
+    if (!id) return;
+
+    // 取消其它 active 状态
+    Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+    Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+
+    // 已存在则激活并返回
+    let existing = tabs.querySelector(`.inner-tab[data-id="${id}"]`);
+    if (existing) {
+        existing.classList.add('active');
+        const pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.classList.add('active');
+        return existing;
+    }
+
+    // 创建新 tab
+    const tab = document.createElement('div');
+    tab.className = 'inner-tab active';
+    tab.dataset.id = id;
+    tab.title = item.name || id;
+    tab.innerHTML = `<span class="tab-label">${item.name || id}</span><span class="close-x">&times;</span>`;
+
+    // 关闭按钮
+    tab.querySelector('.close-x').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.remove();
+        tab.remove();
+    });
+
+    // 点击切换
+    tab.addEventListener('click', () => {
+        Array.from(tabs.querySelectorAll('.inner-tab')).forEach(t => t.classList.remove('active'));
+        Array.from(content.querySelectorAll('.tab-pane')).forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const pane = content.querySelector(`.tab-pane[data-id="${id}"]`);
+        if (pane) pane.classList.add('active');
+    });
+
+    tabs.appendChild(tab);
+
+    // 创建内容 Pane（先显示 header + 加载状态，然后按需拉取该网格员相关订单）
+    const pane = document.createElement('div');
+    pane.className = 'tab-pane active';
+    pane.dataset.id = id;
+    // 先显示基本 header 与加载占位
+    pane.innerHTML = renderGMHeader(item) + '<div class="orders-list">加载中…</div>';
+    content.appendChild(pane);
+
+    // 按网格员从后端拉取订单列表，并渲染到 pane 中；同时把订单缓存到 pane._orders 以便点击时使用
+    fetchOrdersForGridMember(id).then(list => {
+        pane._orders = list || [];
+        const ordersHtml = buildOrdersTableHtml(pane._orders);
+        pane.querySelector('.orders-list').outerHTML = ordersHtml;
+    }).catch(err => {
+        console.error('fetchOrdersForGridMember failed', err);
+        const node = pane.querySelector('.orders-list');
+        if (node) node.outerHTML = '<div class="orders-list">获取订单失败</div>';
+    });
+
+    // 行点击委托：点击某订单行时尝试显示详情（优先使用已缓存的订单对象）
+    pane.addEventListener('click', function (e) {
+        const tr = e.target.closest('tr[data-order-id]');
+        if (!tr) return;
+        const oid = tr.dataset.orderId;
+        const ord = (pane._orders || []).find(o => String(o.orderId || o.id) === String(oid));
+        if (ord && typeof showDetail === 'function') return showDetail(ord);
+        // 如果未命中本地缓存，尝试调用后端详情接口
+        if (typeof fetchOrderDetail === 'function') {
+            fetchOrderDetail(oid).then(o => { if (o && typeof showDetail === 'function') showDetail(o); }).catch(()=>{});
+        }
+    });
+
+    return tab;
+}
+
+function renderGMTabContent(item) {
+    const s = item || {};
+    const escape = (v) => v == null ? '' : String(v);
+
+    // 头部信息（简要）
+    const headerHtml = `
+        <div class="station-header">
+            <div>
+                <div class="station-meta">
+                    <div>编号: ${escape(s.id || s.gmId || '')}</div>
+                    <div>姓名: ${escape(s.name || '')}</div>
+                    <div>联系方式: ${escape(s.phone || s.contact || '')}</div>
+                </div>
+            </div>
+            <div style="text-align:right">
+                <div style="color:var(--gray-medium)">所属网格: ${escape(s.network || s.grid || '')}</div>
+            </div>
+        </div>
+    `;
+
+    // 从全局订单数据中筛选与该网格员相关的订单，支持多种可能的字段名以提高兼容性
+    const ordersSrc = Array.isArray(window.orders) ? window.orders : (Array.isArray(window.dataOrders) ? window.dataOrders : []);
+    const matchKeys = ['gridMemberId', 'gridMember', 'assignedTo', 'delivererId', 'loaderId', 'unloaderId', 'driverId', 'pickerId', 'courierId'];
+    const targetIds = [String(s.id || s.gmId || s.code || s.name)];
+
+    const related = (Array.isArray(ordersSrc) ? ordersSrc.filter(o => {
+        for (let k of matchKeys) {
+            if (o[k] !== undefined && o[k] !== null) {
+                if (targetIds.indexOf(String(o[k])) !== -1) return true;
+            }
+        }
+        // 兼容：有时订单里会把参与人员写在一个数组或字符串字段里
+        if (Array.isArray(o.participants) && o.participants.some(p => targetIds.indexOf(String(p)) !== -1)) return true;
+        if (typeof o.participant === 'string' && targetIds.indexOf(String(o.participant)) !== -1) return true;
+        return false;
+    }) : []);
+
+    // 使用统一的 orders table 风格进行渲染（参考 stations-io）
+    const ordersHtml = buildOrdersTableHtml(related);
+    const section = `
+        <div class="orders-section">
+            ${ordersHtml}
+        </div>
+    `;
+
+    return headerHtml + section;
+}
+
+// 渲染网格员 header（供按需加载时复用）
+function renderGMHeader(item) {
+    const s = item || {};
+    const escape = (v) => v == null ? '' : String(v);
+    return `
+        <div class="station-header">
+            <div>
+                <div class="station-meta">
+                    <div>编号: ${escape(s.id || s.gmId || '')}</div>
+                    <div>姓名: ${escape(s.name || '')}</div>
+                    <div>联系方式: ${escape(s.phone || s.contact || '')}</div>
+                </div>
+            </div>
+            <div style="text-align:right">
+                <div style="color:var(--gray-medium)">所属网格: ${escape(s.network || s.grid || ' -- ')}</div>
+            </div>
+        </div>
+    `;
+}
+
+// 将订单数组渲染为表格 HTML
+function buildOrdersTableHtml(list) {
+    const escape = (v) => v == null ? '' : String(v);
+    // 使用与 stations-io 相同的表格样式（.orders-table），但针对网格员出勤记录定制列：
+    // 列：订单号 | 出勤状态（已取货-配送中 / 已送达 / 已分派未取货）| 收件人 | 电话 | 地址 | 时间（格式化）
+    // 说明：这里把视角调整为“网格员出勤记录”，不展示路线和车辆信息。
+    let ordersHtml = '<div class="orders-list">';
+    if (!list || list.length === 0) {
+        ordersHtml += '<div class="no-data">无关联订单</div>';
+        ordersHtml += '</div>';
+        return ordersHtml;
+    }
+    ordersHtml += '<table class="orders-table" aria-label="orders"><thead><tr><th>订单号</th><th>出勤状态</th><th>收件人</th><th>电话</th><th>地址</th><th>时间</th></tr></thead><tbody>';
+    list.forEach(o => {
+        const oid = escape(o.orderId || o.OrderId || o.id || '');
+        // 计算网格员出勤状态：已送达 / 派件中 / 已分派未取货
+        const rawStatus = (o.status || o.Status || o.state || '') + '';
+        const attendance = computeGMAttendanceStatus(rawStatus, o);
+        const statusHtml = renderOrderStatusBadge(attendance);
+
+        const name = escape(o.addressee || o.Addressee || o.name || o.toName || '');
+        const phone = escape(o.addresseePhone || o.AddresseePhone || o.phone || o.contact || '');
+        const addr = escape(o.address || o.Address || o.toAddress || '');
+        // 时间优先使用 startTime（表示取货/开始派件），否则回退到 createdAt
+        const rawTime = o.startTime || o.StartTime || o.start || o.createdAt || o.CreateTime || '';
+        const time = formatTimeForDisplay(rawTime);
+
+        ordersHtml += `<tr data-order-id="${oid}">
+            <td>${oid}</td>
+            <td>${statusHtml}</td>
+            <td>${name}</td>
+            <td>${phone}</td>
+            <td>${addr}</td>
+            <td>${escape(time)}</td>
+        </tr>`;
+    });
+
+    ordersHtml += '</tbody></table></div>';
+    return ordersHtml;
+}
+
+// 根据订单的后端状态或时间字段，针对网格员出勤记录判断三种状态：
+//  - "已送达"：后端状态表示已完成/已签收/已送达
+//  - "派件中"：后端状态表示配送中/在途/运输（表示网格员已取货并正在派件）
+//  - "已分派未取货"：其它情况（任务下发但网格员尚未从门店取货）
+// 参数说明：rawStatus-来自订单的 status 字段（字符串），order-完整订单对象（用于检查时间等字段）
+function computeGMAttendanceStatus(rawStatus, order) {
+    const s = (rawStatus || '') + '';
+    if (/(完成|签收|已签收|已送达)/.test(s)) return '已送达';
+    if (/(配送中|在途|运输|派件中)/.test(s)) return '派件中';
+
+    // 备用逻辑：如果存在 startTime（表示已开始处理/取货），且状态不为完成，则认为是派件中
+    const start = order && (order.startTime || order.StartTime || order.start || order.Start || order.createdAt);
+    if (start) return '派件中';
+
+    // 默认：已分派但未取货
+    return '已分派未取货';
+}
+
+// 将订单状态渲染为带颜色的 badge，复用 stations-io 的风格
+function renderOrderStatusBadge(st) {
+    if (!st) return `<span class="badge status-pending">--</span>`;
+    if (/(完成|签收|已签收)/.test(st)) return `<span class="badge status-complete">${escapeHtml(st)}</span>`;
+    if (/(配送中|在途|运输)/.test(st)) return `<span class="badge status-inprogress">${escapeHtml(st)}</span>`;
+    if (/(待取件|待配送|待取)/.test(st)) return `<span class="badge status-pending">${escapeHtml(st)}</span>`;
+    return `<span class="badge status-pending">${escapeHtml(st)}</span>`;
+}
+
+// 从后端拉取某个网格员相关的订单（使用 orders-api 提供的 /api/order/list 接口）
+function fetchOrdersForGridMember(gridMemberId) {
+    try {
+        const qs = new URLSearchParams();
+        if (gridMemberId) qs.set('gridMemberId', gridMemberId);
+        const url = '/api/order/list' + (qs.toString() ? ('?' + qs.toString()) : '');
+        return fetch(url, { method: 'GET', cache: 'no-store' })
+            .then(resp => {
+                if (!resp.ok) return resp.text().then(t => { throw new Error(t || resp.statusText); });
+                return resp.json().catch(() => ({}));
+            })
+            .then(json => {
+                const list = (json && json.ordersList) ? json.ordersList : (Array.isArray(json) ? json : []);
+                return list;
+            });
+    } catch (e) {
+        return Promise.reject(e);
+    }
+}
+
+// 获取订单详情： GET /api/order/detail/:orderId
+function fetchOrderDetail(orderId) {
+    if (!orderId) return Promise.reject(new Error('orderId required'));
+    const url = '/api/order/detail/' + encodeURIComponent(orderId);
+    return fetch(url, { method: 'GET', cache: 'no-store' })
+        .then(resp => {
+            if (!resp.ok) return resp.text().then(t => { throw new Error(t || resp.statusText); });
+            return resp.json().catch(() => ({}));
+        });
+}
+
+// 页面初始化绑定：网格员页面的浮动按钮行为
+document.addEventListener('DOMContentLoaded', () => {
+    const container = document.querySelector('.container');
+    if (!container || container.getAttribute('data-page') !== 'gridmember-tasks') return;
+
+    // 浮动新增按钮（若需要快速创建网格员，secondary.js 中已实现 openCreateGridMemberModal）
+    const btnAdd = document.getElementById('btn-add');
+    if (btnAdd) {
+        btnAdd.addEventListener('click', () => {
+            if (typeof openCreateGridMemberModal === 'function') openCreateGridMemberModal();
+            else if (typeof showToast === 'function') showToast('创建功能暂未实现');
+        });
+    }
+});
+
 

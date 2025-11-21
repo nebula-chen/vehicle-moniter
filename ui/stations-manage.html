@@ -52,7 +52,7 @@
                 </li>
                 <ul class="sub-list">
                     <li class="sub-item"><a href="gridmember-profile.html">网格人员档案</a></li>
-                    <li class="sub-item">网格人员出勤记录</li>
+                    <li class="sub-item"><a href="gridmember-tasks.html">网格人员出勤记录</a></li>
                 </ul>
 
                 <li class="nav-item" onclick="toggleSub(this)">
@@ -80,7 +80,7 @@
         <div class="main">
             <h1>仓库/门店档案</h1>
             <!-- 检索筛选区 -->
-            <form class="filter-bar" id="filterForm" onsubmit="event.preventDefault();filterWarehouse();">
+            <form class="filter-bar" id="filterForm" onsubmit="event.preventDefault();filterStations();">
                 <label class="filter-checkbox"><input type="checkbox" checked data-type="warehouse"> <span>仓库</span></label>
                 <label class="filter-checkbox"><input type="checkbox" checked data-type="store"> <span>门店</span></label>
                 <input type="text" id="filter-stationId" placeholder="仓库/门店编号">
