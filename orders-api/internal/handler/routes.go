@@ -35,6 +35,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Handler: GetOrderListHandler(serverCtx),
 			},
 			{
+				Method:  http.MethodGet,
+				Path:    "/api/order/stats",
+				Handler: OrderStatsHandler(serverCtx),
+			},
+			{
 				Method:  http.MethodPost,
 				Path:    "/api/order/update",
 				Handler: OrderUpdateHandler(serverCtx),

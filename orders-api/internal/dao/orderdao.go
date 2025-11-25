@@ -4,7 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
+
+	"orders-api/internal/types"
 )
 
 // OrderDAO 提供订单数据的持久化操作
@@ -21,27 +25,26 @@ func NewOrderDAO(db *sql.DB) *OrderDAO {
 func (d *OrderDAO) CreateTableIfNotExists() error {
 	// 使用较宽松的字段类型以兼容前端结构
 	createSQL := `CREATE TABLE IF NOT EXISTS orders (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        order_id VARCHAR(64) NOT NULL UNIQUE,
-        type VARCHAR(32),
-        weight INT,
-        sender VARCHAR(128),
-        sender_phone VARCHAR(64),
-        sender_address VARCHAR(256),
-        addressee VARCHAR(128),
-        addressee_phone VARCHAR(64),
-        address VARCHAR(256),
-        start_time VARCHAR(32),
-        end_time VARCHAR(32),
-        status VARCHAR(32),
-        pass_stations TEXT,
-        pass_vehicle TEXT,
-        pass_route TEXT,
-        pass_grid_member TEXT,
-        note TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		order_id VARCHAR(64) NOT NULL UNIQUE,
+		type VARCHAR(32),
+		weight INT,
+		sender VARCHAR(128),
+		sender_phone VARCHAR(64),
+		sender_address VARCHAR(256),
+		addressee VARCHAR(128),
+		addressee_phone VARCHAR(64),
+		address VARCHAR(256),
+		end_time VARCHAR(32),
+		status VARCHAR(32),
+		pass_stations TEXT,
+		pass_vehicle TEXT,
+		pass_route TEXT,
+		pass_grid_member TEXT,
+		note TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 
 	_, err := d.db.Exec(createSQL)
 	return err
@@ -64,20 +67,19 @@ func (d *OrderDAO) InsertOrder(orderId string, raw map[string]interface{}) error
 	addressee := toString(raw["addressee"])
 	addresseePhone := toString(raw["addresseePhone"])
 	address := toString(raw["address"])
-	startTime := toString(raw["startTime"])
 	endTime := toString(raw["endTime"])
 	status := toString(raw["status"])
 	note := toString(raw["note"])
 
 	insertSQL := `INSERT INTO orders (
-        order_id, type, weight, sender, sender_phone, sender_address,
-        addressee, addressee_phone, address, start_time, end_time, status,
-        pass_stations, pass_vehicle, pass_route, pass_grid_member, note
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		order_id, type, weight, sender, sender_phone, sender_address,
+		addressee, addressee_phone, address, end_time, status,
+		pass_stations, pass_vehicle, pass_route, pass_grid_member, note
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := d.db.Exec(insertSQL,
 		orderId, sType, weight, sender, senderPhone, senderAddress,
-		addressee, addresseePhone, address, startTime, endTime, status,
+		addressee, addresseePhone, address, endTime, status,
 		string(passStations), string(passVehicle), string(passRoute), string(passGridMember), note,
 	)
 	return err
@@ -143,18 +145,18 @@ func (d *OrderDAO) UpdateOrder(orderId string, updates map[string]interface{}) (
 // GetOrderByID 根据 order_id 查询订单详情，返回一个 map 表示原始字段
 func (d *OrderDAO) GetOrderByID(orderId string) (map[string]interface{}, error) {
 	query := `SELECT order_id, type, weight, sender, sender_phone, sender_address,
-		addressee, addressee_phone, address, start_time, end_time, status,
+		addressee, addressee_phone, address, end_time, status,
 		pass_stations, pass_vehicle, pass_route, pass_grid_member, note, created_at, updated_at
 		FROM orders WHERE order_id = ? LIMIT 1`
 
 	row := d.db.QueryRow(query, orderId)
 	var orderID, sType, sender, senderPhone, senderAddress string
-	var addressee, addresseePhone, address, startTime, endTime, status, passStations, passVehicle, passRoute, passGridMember, note string
+	var addressee, addresseePhone, address, endTime, status, passStations, passVehicle, passRoute, passGridMember, note string
 	var weight sql.NullInt64
 	var createdAt, updatedAt sql.NullString
 
 	err := row.Scan(&orderID, &sType, &weight, &sender, &senderPhone, &senderAddress,
-		&addressee, &addresseePhone, &address, &startTime, &endTime, &status,
+		&addressee, &addresseePhone, &address, &endTime, &status,
 		&passStations, &passVehicle, &passRoute, &passGridMember, &note, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
@@ -170,10 +172,11 @@ func (d *OrderDAO) GetOrderByID(orderId string) (map[string]interface{}, error) 
 		"addressee":      addressee,
 		"addresseePhone": addresseePhone,
 		"address":        address,
-		"startTime":      startTime,
 		"endTime":        endTime,
-		"status":         status,
-		"note":           note,
+		// createdAt 在数据库中为 TIMESTAMP 格式，返回给调用方作为 startTime 以便前端/统计使用
+		"startTime": createdAt.String,
+		"status":    status,
+		"note":      note,
 	}
 
 	// 反序列化 JSON 字段为 []string（容错）
@@ -214,7 +217,7 @@ func (d *OrderDAO) GetOrderByID(orderId string) (map[string]interface{}, error) 
 func (d *OrderDAO) ListOrders(filters map[string]string) ([]map[string]interface{}, error) {
 	// 基本查询
 	base := `SELECT order_id, type, weight, sender, sender_phone, sender_address,
-		addressee, addressee_phone, address, start_time, end_time, status,
+		addressee, addressee_phone, address, created_at, end_time, status,
 		pass_stations, pass_vehicle, pass_route, pass_grid_member, note
 		FROM orders`
 	where := []string{}
@@ -225,12 +228,16 @@ func (d *OrderDAO) ListOrders(filters map[string]string) ([]map[string]interface
 		args = append(args, v)
 	}
 	if v, ok := filters["startTime"]; ok && v != "" {
-		where = append(where, "start_time >= ?")
-		args = append(args, v)
+		if ts, err := parseFlexibleTime(v); err == nil {
+			where = append(where, "created_at >= ?")
+			args = append(args, ts)
+		}
 	}
 	if v, ok := filters["endTime"]; ok && v != "" {
-		where = append(where, "end_time <= ?")
-		args = append(args, v)
+		if ts, err := parseFlexibleTime(v); err == nil {
+			where = append(where, "created_at <= ?")
+			args = append(args, ts)
+		}
 	}
 	// 对于 stationId/vehicleId/routeId/gridMemberId，因我们未在表中单独列出这些字段，
 	// 我们使用 LIKE 匹配 pass_stations/pass_vehicle/pass_route/pass_grid_member
@@ -265,10 +272,11 @@ func (d *OrderDAO) ListOrders(filters map[string]string) ([]map[string]interface
 	results := []map[string]interface{}{}
 	for rows.Next() {
 		var orderID, sType, sender, senderPhone, senderAddress string
-		var addressee, addresseePhone, address, startTime, endTime, status, passStations, passVehicle, passRoute, passGridMember, note string
+		var addressee, addresseePhone, address, endTime, status, passStations, passVehicle, passRoute, passGridMember, note string
 		var weight sql.NullInt64
+		var createdAt sql.NullString
 		if err := rows.Scan(&orderID, &sType, &weight, &sender, &senderPhone, &senderAddress,
-			&addressee, &addresseePhone, &address, &startTime, &endTime, &status,
+			&addressee, &addresseePhone, &address, &createdAt, &endTime, &status,
 			&passStations, &passVehicle, &passRoute, &passGridMember, &note); err != nil {
 			continue
 		}
@@ -283,7 +291,6 @@ func (d *OrderDAO) ListOrders(filters map[string]string) ([]map[string]interface
 			"addressee":      addressee,
 			"addresseePhone": addresseePhone,
 			"address":        address,
-			"startTime":      startTime,
 			"endTime":        endTime,
 			"status":         status,
 			"note":           note,
@@ -337,6 +344,226 @@ func (d *OrderDAO) DeleteOrder(orderId string) (rowsAffected int64, err error) {
 	return ra, nil
 }
 
+// Stats 在数据库层进行聚合统计，返回按年/月/日的总量以及按类型分解的时间序列统计，实际实现委托给 StatsWithOptions（保留向后兼容）
+func (d *OrderDAO) Stats() (*types.StatsResp, error) {
+	return d.StatsWithOptions("", 0, "", "")
+}
+
+// StatsWithOptions 在数据库层执行聚合，支持：
+// - mode: "year"|"month"|"day"（空表示返回所有三种）
+// - limit: 当 limit>0 时，针对所选 mode 仅返回最近 limit 个时间桶（按时间降序选择），以减小返回量（适用于数据量大时）
+// - start/end: 可选的时间窗口，支持多种时间格式（使用 parseFlexibleTime 解析），当非空时用于 WHERE created_at BETWEEN start AND end
+func (d *OrderDAO) StatsWithOptions(mode string, limit int, start string, end string) (*types.StatsResp, error) {
+	resp := &types.StatsResp{
+		TotalCount: types.TimeSeriesStats{},
+		TypeCount:  map[string]types.TimeSeriesStats{},
+	}
+
+	// 构建时间范围 WHERE 子句参数
+	whereParts := []string{"created_at IS NOT NULL"}
+	args := []interface{}{}
+	if start != "" {
+		if ts, err := parseFlexibleTime(start); err == nil {
+			whereParts = append(whereParts, "created_at >= ?")
+			args = append(args, ts)
+		}
+	}
+	if end != "" {
+		if ts, err := parseFlexibleTime(end); err == nil {
+			whereParts = append(whereParts, "created_at <= ?")
+			args = append(args, ts)
+		}
+	}
+	whereBase := "WHERE " + strings.Join(whereParts, " AND ")
+
+	// 帮助函数：按格式获取最近的 limit 个日期字符串（降序 -> 返回升序结果）
+	getRecentDates := func(dateFormat string) ([]string, error) {
+		if limit <= 0 {
+			return nil, nil
+		}
+		q := fmt.Sprintf("SELECT DISTINCT DATE_FORMAT(created_at, '%s') AS date FROM orders %s ORDER BY date DESC LIMIT %d", dateFormat, whereBase, limit)
+		rows, err := d.db.Query(q, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		tmp := []string{}
+		for rows.Next() {
+			var date string
+			if err := rows.Scan(&date); err != nil {
+				return nil, err
+			}
+			tmp = append(tmp, date)
+		}
+		// tmp currently descending, reverse to ascending for presentation
+		for i, j := 0, len(tmp)-1; i < j; i, j = i+1, j-1 {
+			tmp[i], tmp[j] = tmp[j], tmp[i]
+		}
+		return tmp, nil
+	}
+
+	// 执行总量统计的通用逻辑
+	runTotal := func(dateFmt string, dateExpr string) ([]types.DateCount, error) {
+		// 若 limit>0，先找到需要的日期集合
+		dates, err := getRecentDates(dateFmt)
+		if err != nil {
+			return nil, err
+		}
+		var q string
+		var qArgs []interface{}
+		if len(dates) > 0 {
+			// 使用 IN (...) 过滤
+			placeholders := strings.Repeat("?,", len(dates))
+			placeholders = strings.TrimRight(placeholders, ",")
+			q = fmt.Sprintf("SELECT %s AS date, COUNT(*) AS cnt FROM orders %s AND %s IN (%s) GROUP BY date ORDER BY date", dateExpr, whereBase, dateExpr, placeholders)
+			qArgs = append(qArgs, args...)
+			for _, d := range dates {
+				qArgs = append(qArgs, d)
+			}
+		} else {
+			q = fmt.Sprintf("SELECT %s AS date, COUNT(*) AS cnt FROM orders %s GROUP BY date ORDER BY date", dateExpr, whereBase)
+			qArgs = args
+		}
+		rows, err := d.db.Query(q, qArgs...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []types.DateCount{}
+		for rows.Next() {
+			var date string
+			var cnt int
+			if err := rows.Scan(&date, &cnt); err != nil {
+				return nil, err
+			}
+			out = append(out, types.DateCount{Date: date, Count: cnt})
+		}
+		return out, nil
+	}
+
+	// 执行按类型统计的通用逻辑
+	runType := func(dateFmt string, dateExpr string) (map[string]map[string]int, error) {
+		dates, err := getRecentDates(dateFmt)
+		if err != nil {
+			return nil, err
+		}
+		var q string
+		var qArgs []interface{}
+		if len(dates) > 0 {
+			placeholders := strings.Repeat("?,", len(dates))
+			placeholders = strings.TrimRight(placeholders, ",")
+			q = fmt.Sprintf("SELECT `type`, %s AS date, COUNT(*) AS cnt FROM orders %s AND %s IN (%s) GROUP BY `type`, date ORDER BY `type`, date", dateExpr, whereBase, dateExpr, placeholders)
+			qArgs = append(qArgs, args...)
+			for _, d := range dates {
+				qArgs = append(qArgs, d)
+			}
+		} else {
+			q = fmt.Sprintf("SELECT `type`, %s AS date, COUNT(*) AS cnt FROM orders %s GROUP BY `type`, date ORDER BY `type`, date", dateExpr, whereBase)
+			qArgs = args
+		}
+		rows, err := d.db.Query(q, qArgs...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		target := map[string]map[string]int{}
+		for rows.Next() {
+			var tp string
+			var date string
+			var cnt int
+			if err := rows.Scan(&tp, &date, &cnt); err != nil {
+				return nil, err
+			}
+			if tp == "" {
+				tp = "未知"
+			}
+			if _, ok := target[tp]; !ok {
+				target[tp] = map[string]int{}
+			}
+			target[tp][date] += cnt
+		}
+		return target, nil
+	}
+
+	// 将 map[string]int 转为排序的 []DateCount
+	mapToSorted := func(m map[string]int) []types.DateCount {
+		if len(m) == 0 {
+			return []types.DateCount{}
+		}
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+		out := make([]types.DateCount, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, types.DateCount{Date: k, Count: m[k]})
+		}
+		return out
+	}
+
+	// 处理不同粒度：year/month/day 或全部
+	if mode == "" || mode == "year" {
+		ys, err := runTotal("%Y", "DATE_FORMAT(created_at, '%Y')")
+		if err != nil {
+			return resp, err
+		}
+		resp.TotalCount.YearStats = ys
+	}
+	if mode == "" || mode == "month" {
+		ms, err := runTotal("%Y-%m", "DATE_FORMAT(created_at, '%Y-%m')")
+		if err != nil {
+			return resp, err
+		}
+		resp.TotalCount.MonthStats = ms
+	}
+	if mode == "" || mode == "day" {
+		ds, err := runTotal("%Y-%m-%d", "DATE_FORMAT(created_at, '%Y-%m-%d')")
+		if err != nil {
+			return resp, err
+		}
+		resp.TotalCount.DayStats = ds
+	}
+
+	// 按类型
+	if mode == "" || mode == "year" {
+		ty, err := runType("%Y", "DATE_FORMAT(created_at, '%Y')")
+		if err != nil {
+			return resp, err
+		}
+		// map -> TimeSeriesStats
+		for tp, m := range ty {
+			ts := resp.TypeCount[tp]
+			ts.YearStats = mapToSorted(m)
+			resp.TypeCount[tp] = ts
+		}
+	}
+	if mode == "" || mode == "month" {
+		tm, err := runType("%Y-%m", "DATE_FORMAT(created_at, '%Y-%m')")
+		if err != nil {
+			return resp, err
+		}
+		for tp, m := range tm {
+			ts := resp.TypeCount[tp]
+			ts.MonthStats = mapToSorted(m)
+			resp.TypeCount[tp] = ts
+		}
+	}
+	if mode == "" || mode == "day" {
+		td, err := runType("%Y-%m-%d", "DATE_FORMAT(created_at, '%Y-%m-%d')")
+		if err != nil {
+			return resp, err
+		}
+		for tp, m := range td {
+			ts := resp.TypeCount[tp]
+			ts.DayStats = mapToSorted(m)
+			resp.TypeCount[tp] = ts
+		}
+	}
+
+	return resp, nil
+}
+
 // 辅助函数：将 interface 转为 string
 func toString(v interface{}) string {
 	if v == nil {
@@ -380,4 +607,45 @@ func toInt(v interface{}) int {
 	default:
 		return 0
 	}
+}
+
+// parseFlexibleTime 尝试使用多种布局解析用户传入的时间字符串，返回标准化的 MySQL DATETIME 字符串
+func parseFlexibleTime(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("empty time string")
+	}
+	layouts := []string{
+		"20060102150405",      // yyyymmddhhmmss
+		"200601021504",        // yyyymmddhhmm
+		"20060102",            // yyyymmdd
+		"2006-01-02 15:04:05", // yyyy-mm-dd hh:mm:ss
+		"2006-01-02 15:04",    // yyyy-mm-dd hh:mm
+		time.RFC3339,          // ISO
+		"2006-01-02",          // yyyy-mm-dd
+	}
+	loc := time.Local
+	for _, l := range layouts {
+		if t, err := time.ParseInLocation(l, s, loc); err == nil {
+			return t.Format("2006-01-02 15:04:05"), nil
+		}
+	}
+	// 作为兜底，提取字符串中的数字并尝试按 14 位解析
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, s)
+	if len(digits) >= 14 {
+		if t, err := time.ParseInLocation("20060102150405", digits[:14], loc); err == nil {
+			return t.Format("2006-01-02 15:04:05"), nil
+		}
+	}
+	if len(digits) == 8 {
+		if t, err := time.ParseInLocation("20060102", digits, loc); err == nil {
+			return t.Format("2006-01-02 15:04:05"), nil
+		}
+	}
+	return "", fmt.Errorf("unrecognized time format: %s", s)
 }

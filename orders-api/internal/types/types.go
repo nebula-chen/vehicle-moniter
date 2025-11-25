@@ -8,6 +8,11 @@ type BaseResp struct {
 	Msg  string `json:"msg"`
 }
 
+type DateCount struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
 type OrderCreateInfo struct {
 	Type           string   `json:"type"`                    // 订单类型，普件、特快、冷藏、冷冻
 	Weight         int      `json:"weight"`                  // 重量，单位：千克（kg）精确到小数点后 1 位，乘 10 后传输
@@ -72,4 +77,15 @@ type OrderUpdateReq struct {
 	PassRoute      []string `json:"passRoute,optional"`
 	PassGridMember []string `json:"passGridMember,optional"`
 	Note           string   `json:"note,optional"`
+}
+
+type StatsResp struct {
+	TotalCount TimeSeriesStats            `json:"totalCount"`
+	TypeCount  map[string]TimeSeriesStats `json:"typeCount"`
+}
+
+type TimeSeriesStats struct {
+	YearStats  []DateCount `json:"yearStats"`
+	MonthStats []DateCount `json:"monthStats"`
+	DayStats   []DateCount `json:"dayStats"`
 }

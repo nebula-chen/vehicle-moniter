@@ -47,8 +47,7 @@ func (l *OrderCreateLogic) OrderCreate(req *types.OrderCreateInfo) (resp *types.
 	randomCode := string(b)
 	orderId := fmt.Sprintf("%s-%s", timestamp, randomCode)
 
-	// 自动生成订单创建时间，格式为 yyyyMMddHHmmss
-	createTime := time.Now().Format("20060102150405")
+	// 注意：不再主动写入 startTime 字段（使用数据库的 created_at 作为订单创建时间）
 
 	// 将 req 转为 map[string]interface{} 以便 DAO 序列化复杂字段
 	raw := map[string]interface{}{
@@ -60,7 +59,7 @@ func (l *OrderCreateLogic) OrderCreate(req *types.OrderCreateInfo) (resp *types.
 		"addressee":      req.Addressee,
 		"addresseePhone": req.AddresseePhone,
 		"address":        req.Address,
-		"startTime":      createTime,
+		// 使用数据库的 created_at 作为持久化的创建时间，不在这里写入 startTime 字段
 		"endTime":        nil,   // 新建订单无结束时间
 		"status":         "配送中", // 新建订单默认状态为 配送中
 		"passStations":   req.PassStations,

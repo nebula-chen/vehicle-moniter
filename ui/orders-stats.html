@@ -10,9 +10,43 @@
     <link rel="stylesheet" href="css/secondary-style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <!-- ECharts -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+    <script src="js/echarts.min.js"></script>
     <script src="js/data.js"></script>
     <script src="js/analytics.js" defer></script>
+    <style>
+        /* 将图表按 2x2 列表排列 */
+        .charts-flex {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        /* 统一图表高度：每个格子高度为可响应的值，且不超过视口的一半
+           - 使用 CSS min() 与 calc() 结合：在多数屏幕上每个图表高度不超过 48vh，
+             并且不超过 (100vh - topOffset) / 2，topOffset 用于预留页眉/控件高度
+           - 提供最小高度以避免在极小窗口上过于压缩 */
+        .chart-box {
+            width: 100%;
+            box-sizing: border-box;
+            height: min(48vh, calc((100vh - var(--top-offset, 160px)) / 2));
+            min-height: 220px;
+            max-height: 520px;
+            overflow: hidden;
+        }
+
+        /* 每个图表在两列布局中的伸缩规则：尽量两列分布，每列占可用宽度的一半减去 gap */
+        .chart-box {
+            flex: 1 1 calc(50% - 16px);
+            min-width: 300px; /* 防止在窄屏下太窄 */
+        }
+
+        @media (max-width: 800px) {
+            .charts-flex { justify-content: stretch; }
+            .chart-box { flex: 1 1 100%; /* 单列 */
+                height: min(60vh, calc((100vh - var(--top-offset, 140px)) / 1)); }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -83,6 +117,31 @@
         <!-- 主体：统计面板 -->
         <div class="main">
             <h1>订单数据统计分析</h1>
+
+            <!-- 时间模式切换：年 / 月 / 日 -->
+            <div class="controls">
+                <label>时间维度：</label>
+                <select id="timeModeSelect">
+                    <option value="year">按年</option>
+                    <option value="month" selected>按月</option>
+                    <option value="day">按日</option>
+                </select>
+                <button id="refreshBtn">刷新</button>
+            </div>
+
+            <div class="charts-flex" style="margin-top:16px;">
+                <!-- 图表容器：总量统计 -->
+                <div id="totalChart" class="chart-box" style="border:1px solid #e8e8e8;padding:8px;border-radius:6px;"></div>
+
+                <!-- 图表容器：种类统计（堆叠柱状图） -->
+                <div id="typeChart" class="chart-box" style="border:1px solid #e8e8e8;padding:8px;border-radius:6px;"></div>
+
+                <!-- 预留占位图表 -->
+                <div id="extraChart1" class="chart-box" style="border:1px solid #e8e8e8;padding:8px;border-radius:6px;"></div>
+
+                <!-- 预留占位图表2 -->
+                <div id="extraChart2" class="chart-box" style="border:1px solid #e8e8e8;padding:8px;border-radius:6px;"></div>
+            </div>
         </div>
     </div>
 

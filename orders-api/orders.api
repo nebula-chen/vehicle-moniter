@@ -70,6 +70,23 @@ type OrderDeleteReq {
 	OrderId string `json:"orderId"`
 }
 
+type DateCount {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+type TimeSeriesStats {
+	YearStats  []DateCount `json:"yearStats"`
+	MonthStats []DateCount `json:"monthStats"`
+	DayStats   []DateCount `json:"dayStats"`
+}
+
+type StatsResp {
+	TotalCount TimeSeriesStats `json:"totalCount"`
+	// TypeCount 按订单类型分解，每个类型返回其年/月/日的时间序列统计
+	TypeCount map[string]TimeSeriesStats `json:"typeCount"`
+}
+
 service orders-api {
 	@handler OrderCreate // 创建订单
 	post /api/order/create (OrderCreateInfo) returns (BaseResp)
@@ -85,5 +102,8 @@ service orders-api {
 
 	@handler OrderDelete // 删除订单
 	post /api/order/delete (OrderDeleteReq) returns (BaseResp)
+
+	@handler OrderStats // 订单统计
+	get /api/order/stats returns (StatsResp)
 }
 
