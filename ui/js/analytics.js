@@ -1,81 +1,116 @@
-// orders-stats 页面图表逻辑
-// 功能：
-// 1) 从后端 /api/order/list 获取订单数据（若失败使用内置示例回退）
-// 2) 支持按年 / 月 / 日 三种维度聚合（x轴最多显示最近 5 个柱）
-// 3) 绘制“订单总量统计”柱状图和“订单种类统计”堆叠柱状图
-// 注释使用中文，方便维护
+// 目录展开/收起
+function toggleSub(el) {
+    const icon = el.querySelector('.bi');
+    const nextUl = el.nextElementSibling;
+    if (!nextUl || !nextUl.classList.contains('sub-list')) return;
+    if (nextUl.classList.contains('show')) {
+    nextUl.classList.remove('show');
+    icon.classList.remove('bi-chevron-up');
+    icon.classList.add('bi-chevron-down');
+    } else {
+    nextUl.classList.add('show');
+    icon.classList.remove('bi-chevron-down');
+    icon.classList.add('bi-chevron-up');
+    }
+}
 
+// orders-stats 页面
 document.addEventListener('DOMContentLoaded', () => {
-    const timeModeSelect = document.getElementById('timeModeSelect');
-    const refreshBtn = document.getElementById('refreshBtn');
+    // 统一入口：根据页面 data-page 属性选择数据源（订单或车辆）
+    const pageType = (document.body && document.body.getAttribute('data-page')) || '';
 
-    // 初始化图表实例
+    // 共享的 DOM 元素（两个页面使用相同的 id）
+    // 顶部全局时间选择已移除；每个图表有独立的模式按钮
     const totalChartDom = document.getElementById('totalChart');
     const typeChartDom = document.getElementById('typeChart');
-    const totalChart = echarts.init(totalChartDom);
-    const typeChart = echarts.init(typeChartDom);
-    // 预留两个占位图表实例
     const extraChart1Dom = document.getElementById('extraChart1');
     const extraChart2Dom = document.getElementById('extraChart2');
+    // 新增：饼图与表格、统计标签
+    const pieCategoryDom = document.getElementById('pieCategoryChart'); // 快递/外卖
+    const pieStatusDom = document.getElementById('pieStatusChart'); // 订单状态
+    const areaTableDom = document.getElementById('areaTable');
+    const totalCountLabel = document.getElementById('totalCountLabel');
+    const todayCountLabel = document.getElementById('todayCountLabel');
+    const expressCountLabel = document.getElementById('expressCountLabel');
+    const takeawayCountLabel = document.getElementById('takeawayCountLabel');
+
+    // 如果页面没有这些图表容器之一，则不初始化统计模块（避免在不含统计的页面抛错）
+    if (!totalChartDom || !typeChartDom) {
+        return; // 页面不包含统计面板，什么也不做
+    }
+
+    // 每个主图的模式（year|month|day），默认 day
+    let totalMode = 'day';
+    let typeMode = 'day';
+    const totalModeBtns = document.getElementById('totalModeBtns');
+    const typeModeBtns = document.getElementById('typeModeBtns');
+
+    // 根据页面类型选择 API 与回退示例数据
+    const isVehiclePage = pageType === 'car-stats' || /车|车辆/.test(document.title);
+    const listApi = isVehiclePage ? '/api/vehicle/list' : '/api/order/list';
+    const statsApi = isVehiclePage ? '/api/vehicle/stats?limit=5' : '/api/order/stats?limit=5';
+
+    // 车辆回退示例数据（当后端不可用时使用，字段尽量兼容多种实现）
+    const fallbackVehicleData = [
+        { vehicleId: 'V-SAMPLE-001', type: '电动车', lastActive: '2025-09-10 10:10' },
+        { vehicleId: 'V-SAMPLE-002', type: '燃油车', lastActive: '2025-09-10 09:32' },
+        { vehicleId: 'V-SAMPLE-003', type: '电动车', lastActive: '2025-08-23 14:00' },
+        { vehicleId: 'V-SAMPLE-004', type: '混合动力', lastActive: '2025-09-01 10:00' },
+        { vehicleId: 'V-SAMPLE-005', type: '电动车', lastActive: '2024-06-01 08:00' }
+    ];
+
+    // 订单回退示例（保留原有）
+    const fallbackOrderData = [
+        { orderId: 'SAMPLE-001', type: '普通', startTime: '2025-09-10 10:10' },
+        { orderId: 'SAMPLE-002', type: '特快', startTime: '2025-09-10 09:32' },
+        { orderId: 'SAMPLE-003', type: '冷藏', startTime: '2025-08-23 14:00' },
+        { orderId: 'SAMPLE-004', type: '冷冻', startTime: '2025-09-01 10:00' },
+        { orderId: 'SAMPLE-005', type: '普通', startTime: '2024-06-01 08:00' },
+    ];
+
+    // 初始化图表实例
+    const totalChart = echarts.init(totalChartDom);
+    const typeChart = echarts.init(typeChartDom);
     const extraChart1 = extraChart1Dom ? echarts.init(extraChart1Dom) : null;
     const extraChart2 = extraChart2Dom ? echarts.init(extraChart2Dom) : null;
-    // 收集所有 chart 以便统一 resize
-    const allCharts = [totalChart, typeChart];
+    const pieCategoryChart = pieCategoryDom ? echarts.init(pieCategoryDom) : null;
+    const pieStatusChart = pieStatusDom ? echarts.init(pieStatusDom) : null;
+    const allCharts = [totalChart, typeChart, pieCategoryChart, pieStatusChart];
     if (extraChart1) allCharts.push(extraChart1);
     if (extraChart2) allCharts.push(extraChart2);
 
-    // 窗口大小变化时调整图表尺寸，保证网格布局下图表正确渲染
+    // 窗口大小变化时调整图表尺寸
     window.addEventListener('resize', () => {
         allCharts.forEach(c => { try { c && c.resize(); } catch (e) { /* ignore */ } });
     });
 
-    // 绑定交互
-    refreshBtn.addEventListener('click', () => refreshAndRender());
-    timeModeSelect.addEventListener('change', () => refreshAndRender());
-
-    // 首次渲染
-    refreshAndRender();
-
-    // --------------------------------------------------
-    // 数据获取与聚合逻辑
-    // --------------------------------------------------
-
-    // 尝试从后端获取订单列表；如失败使用内置示例数据回退
-    async function fetchOrders() {
-        try {
-            const res = await fetch('/api/order/list');
-            if (!res.ok) throw new Error('后端返回非 2xx');
-            const json = await res.json();
-            // 兼容各种返回格式：优先使用 ordersList 字段
-            if (json && Array.isArray(json.ordersList)) {
-            return json.ordersList;
-            }
-            // 直接返回数组（某些实现可能直接返回数组）
-            if (Array.isArray(json)) return json;
-        } catch (e) {
-            // console.warn('fetchOrders failed, use fallback sample', e);
-        }
-
-        // 回退示例数据（结构尽量与后端一致，StartTime 字段格式可能不同，解析时会兼容）
-        return [
-            { orderId: 'SAMPLE-001', type: '普通', startTime: '2025-09-10 10:10' },
-            { orderId: 'SAMPLE-002', type: '特快', startTime: '2025-09-10 09:32' },
-            { orderId: 'SAMPLE-003', type: '冷藏', startTime: '2025-08-23 14:00' },
-            { orderId: 'SAMPLE-004', type: '冷冻', startTime: '2025-09-01 10:00' },
-            { orderId: 'SAMPLE-005', type: '普通', startTime: '2024-06-01 08:00' },
-        ];
+    // 按钮点击切换模式的辅助：设置 active 样式
+    function setupModeButtons(containerEl, setter) {
+        if (!containerEl) return;
+        containerEl.querySelectorAll('button[data-mode]').forEach(b => {
+            b.addEventListener('click', () => {
+                const m = b.getAttribute('data-mode');
+                setter(m);
+                // 更新样式
+                containerEl.querySelectorAll('button[data-mode]').forEach(x => {
+                    x.classList.remove('active');
+                    x.style.background = '#fff';
+                });
+                b.classList.add('active');
+                b.style.background = '#f0f0f0';
+                refreshAndRender();
+            });
+        });
     }
+    setupModeButtons(totalModeBtns, m => totalMode = m);
+    setupModeButtons(typeModeBtns, m => typeMode = m);
 
-    // 一次性调用后端统计接口 /api/order/stats?limit=5（mode 为空，返回 year/month/day 全部粒度）
-    // 返回格式：{ totalCount: { yearStats: [{date,count}], monthStats: [...], dayStats: [...] }, typeCount: { typeName: { yearStats:[], monthStats:[], dayStats:[] } } }
-    // 前端会缓存该结果（页面生命周期内）并在视图切换时直接从缓存取对应粒度数据。
+    // 缓存后端一次性统计结果，页面生命周期内复用
     let statsCache = null;
     async function fetchStatsAll() {
         if (statsCache) return statsCache;
         try {
-            // mode 传空以请求后端返回所有粒度的统计结果
-            const url = '/api/order/stats?limit=5';
-            const res = await fetch(url);
+            const res = await fetch(statsApi);
             if (!res.ok) throw new Error('stats api returned non-2xx');
             const json = await res.json();
             if (json && json.totalCount) {
@@ -83,30 +118,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 return json;
             }
         } catch (e) {
-            // console.warn('fetchStatsAll failed', e);
+            // 后端不可用则返回 null，由前端逐条聚合
         }
         return null;
     }
 
-  // 解析后端 / data.js 中可能的时间字符串，返回 Date 对象（尽量兼容多种格式）
+    // 通用的列表获取（根据 pageType 切换 API），失败时使用回退示例数据
+    async function fetchList() {
+        try {
+            const res = await fetch(listApi);
+            if (!res.ok) throw new Error('list api returned non-2xx');
+            const json = await res.json();
+            // 某些后端可能包装成 { list: [...] } 或 ordersList
+            if (Array.isArray(json)) return json;
+            if (json && Array.isArray(json.ordersList)) return json.ordersList;
+            if (json && Array.isArray(json.list)) return json.list;
+        } catch (e) {
+            // ignore
+        }
+        return isVehiclePage ? fallbackVehicleData : fallbackOrderData;
+    }
+
+    // 解析多种时间字符串为 Date（兼容 yyyyMMddHHmmss / 带空格 / 带斜杠 等）
     function parseTime(ts) {
         if (!ts) return null;
-        // 后端注释中提到可能是 yyyyMMddHHmmss
         if (/^\d{14}$/.test(ts)) {
             const y = ts.substr(0,4), m = ts.substr(4,2), d = ts.substr(6,2), hh = ts.substr(8,2), mm = ts.substr(10,2), ss = ts.substr(12,2);
             return new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
         }
-        // 常见带空格格式：2025-09-10 10:10 或 2025/09/10 10:10
-        const normalized = ts.replace(/\s+/, 'T').replace(/\//g, '-');
+        const normalized = String(ts).replace(/\s+/, 'T').replace(/\//g, '-');
         const d = new Date(normalized);
         if (!isNaN(d)) return d;
-        // try fallback parse
         const tryDate = Date.parse(ts);
         if (!isNaN(tryDate)) return new Date(tryDate);
         return null;
     }
 
-  // 根据 mode（year/month/day）构建 key 字符串
+    // 构建聚合桶 key（年 / 月 / 日）
     function bucketKey(date, mode) {
         if (!date) return '未知';
         const y = date.getFullYear();
@@ -114,18 +162,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = String(date.getDate()).padStart(2, '0');
         if (mode === 'year') return String(y);
         if (mode === 'month') return `${y}-${m}`;
-        return `${y}-${m}-${d}`; // day
+        return `${y}-${m}-${d}`;
     }
 
-    // 获取最近最多 5 个桶（按时间排序，取最新的 5 个）
+    // 选取最近最多 5 个时间桶并居中（与订单页面行为一致）
     function pickRecentBuckets(allKeys) {
-        // allKeys 为字符串数组，格式为 yyyy 或 yyyy-mm 或 yyyy-mm-dd
-        // 目标：返回长度固定为 5 的数组（x 轴 5 列）。
-        // - 当 allKeys.length > 5 时，返回按时间升序的最近 5 个 key
-        // - 当 allKeys.length <= 5 时，将这些 keys 在 5 槽位中居中排列，其他槽位用空字符串占位
         if (!Array.isArray(allKeys)) return Array(5).fill('');
-
-        // 解析 key 到时间戳并排序（升序）
         const pairs = allKeys.map(k => {
             const parts = k.split('-');
             let dt;
@@ -134,48 +176,52 @@ document.addEventListener('DOMContentLoaded', () => {
             else dt = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
             return { k, t: dt.getTime() };
         }).sort((a, b) => a.t - b.t);
-
         const keysAsc = pairs.map(p => p.k);
-        if (keysAsc.length >= 5) {
-            // 如果多于等于 5 个，取最后 5 个（仍保持升序）
-            return keysAsc.slice(keysAsc.length - 5);
-        }
-
-        // 少于 5 个时，创建 5 槽位并居中放置
+        if (keysAsc.length >= 5) return keysAsc.slice(keysAsc.length - 5);
         const result = Array(5).fill('');
         const n = keysAsc.length;
-        // 使用向上取整以使数据更靠中间偏右（例如 n=2 -> start=2 -> 填充第3、第4）
         const start = Math.ceil((5 - n) / 2);
-        for (let i = 0; i < n; i++) {
-            result[start + i] = keysAsc[i];
-        }
+        for (let i = 0; i < n; i++) result[start + i] = keysAsc[i];
         return result;
     }
 
-    // 主刷新函数：拉取数据 -> 聚合 -> 渲染图表
-    async function refreshAndRender() {
-        const mode = (timeModeSelect.value || 'month');
-        const orders = await fetchOrders();
+    // 从一条记录中提取时间字段（兼容多种字段名）
+    function extractTimeFromRecord(rec) {
+        // common candidates for orders and vehicles
+        return rec.StartTime || rec.startTime || rec.starttime || rec.start || rec.lastActive || rec.last_active || rec.lastActiveTime || rec.updateTime || rec.updatedAt || rec.time || rec.timestamp || null;
+    }
 
-    // 先尝试调用后端一次性预聚合接口获取所有粒度的统计（优先使用后端统计以减轻前端负担）
-    const statsAll = await fetchStatsAll();
+    // 从记录中提取类型/分类字段（orders: type, Vehicles: type or status）
+    function extractTypeFromRecord(rec) {
+        return rec.Type || rec.type || rec.vehicleType || rec.status || rec.category || '未知';
+    }
 
+    // 提取订单状态字段
+    function extractStatusFromRecord(rec) {
+        return rec.Status || rec.status || rec.state || '未知';
+    }
+
+    // 判定外卖 vs 快递：
+    // 说明/假设：若订单类型包含“外卖”或“个人”或 routeId 提及“楼间配送”，则视为外卖；否则视为快递。
+    function isTakeawayOrder(rec) {
+        const t = String(rec.type || rec.Type || '').toLowerCase();
+        const r = String(rec.routeId || '').toLowerCase();
+        if (t.includes('外卖') || t.includes('个人') || r.includes('楼间')) return true;
+        return false;
+    }
+
+    // 辅助：根据 mode 聚合并返回用于绘图的数据
+    function aggregateForMode(mode, list, statsAll) {
         const buckets = {}; // { key: { total: n, types: {typeName: n} } }
         const typesSet = new Set();
-
         if (statsAll && statsAll.totalCount) {
-            // 从缓存/后端返回结构中提取对应粒度的数据数组（modeKey）
             const modeKey = mode === 'year' ? 'yearStats' : mode === 'month' ? 'monthStats' : 'dayStats';
             const totalArr = (statsAll.totalCount && statsAll.totalCount[modeKey]) ? statsAll.totalCount[modeKey] : [];
-
-            // 填充总量到 buckets
             totalArr.forEach(item => {
                 const k = item.date || '';
                 if (!buckets[k]) buckets[k] = { total: 0, types: {} };
                 buckets[k].total = item.count || 0;
             });
-
-            // 填充按类型统计（typeCount 的每个值也是 TimeSeriesStats）
             if (statsAll.typeCount && typeof statsAll.typeCount === 'object') {
                 Object.keys(statsAll.typeCount).forEach(typeName => {
                     const ts = statsAll.typeCount[typeName];
@@ -188,113 +234,228 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 });
             }
-
-            var allKeys = Object.keys(buckets).filter(k => k && k !== '未知');
         } else {
-            // 回退到老逻辑：逐条订单聚合
-            orders.forEach(o => {
-                const ts = o.StartTime || o.startTime || o.starttime || o.Starttime || o.startTime;
+            // 逐条聚合
+            list.forEach(rec => {
+                const ts = extractTimeFromRecord(rec);
                 const d = parseTime(ts);
                 const key = bucketKey(d, mode);
                 if (!buckets[key]) buckets[key] = { total: 0, types: {} };
                 buckets[key].total += 1;
-                const t = o.Type || o.type || '未知';
+                const t = extractTypeFromRecord(rec);
                 typesSet.add(t);
                 buckets[key].types[t] = (buckets[key].types[t] || 0) + 1;
             });
-
-            var allKeys = Object.keys(buckets).filter(k => k && k !== '未知');
         }
-        if (allKeys.length === 0) {
-            // 无数据时清空图表并提示
+        const allKeys = Object.keys(buckets).filter(k => k && k !== '未知');
+        const chosen = pickRecentBuckets(allKeys);
+        const totalSeries = chosen.map(k => buckets[k] ? buckets[k].total : 0);
+        const types = Array.from(typesSet);
+        const typeSeries = types.map(typeName => {
+            const data = chosen.map(k => (buckets[k] && buckets[k].types[typeName]) ? buckets[k].types[typeName] : 0);
+            return { name: typeName, type: 'bar', stack: 'total', emphasis: { focus: 'series' }, data };
+        });
+        return { buckets, typesSet, allKeys, chosen, totalSeries, types, typeSeries };
+    }
+
+    // 主刷新流程：拉取列表与可选的后端预聚合 stats -> 聚合 -> 渲染
+    async function refreshAndRender() {
+        const list = await fetchList();
+        const statsAll = await fetchStatsAll();
+
+        // 计算统计卡与饼图数据、片区表
+        // 总数、今日数、快递/外卖
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        let totalOrders = 0;
+        let todayOrders = 0;
+        let expressCount = 0;
+        let takeawayCount = 0;
+        const statusCounts = {}; // status -> count
+        const typeCountsOverall = {}; // type -> count
+        const areaMap = {}; // area -> { city: n, express: n, normal: n, cold: n, frozen: n }
+
+        list.forEach(rec => {
+            totalOrders++;
+            const ts = parseTime(extractTimeFromRecord(rec));
+            if (ts && +new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()) === +today) todayOrders++;
+            if (isTakeawayOrder(rec)) takeawayCount++; else expressCount++;
+            const st = extractStatusFromRecord(rec) || '未知';
+            statusCounts[st] = (statusCounts[st] || 0) + 1;
+            const tt = extractTypeFromRecord(rec) || '未知';
+            typeCountsOverall[tt] = (typeCountsOverall[tt] || 0) + 1;
+
+            // 片区判定：优先使用 warehouseId 对应的 area，其次尝试使用 address 字段的前缀
+            let area = '未分片区';
+            try {
+                const stObj = window.getStationById && window.getStationById(rec.warehouseId);
+                if (stObj && stObj.area) area = stObj.area;
+                else if (rec.address) {
+                    // 采用前 6 个字符作为简要片区名的回退方案
+                    area = String(rec.address).slice(0,6);
+                }
+            } catch (e) {}
+            if (!areaMap[area]) areaMap[area] = { city:0, express:0, normal:0, cold:0, frozen:0 };
+            // 城配判定：routeId 含 '楼间' or explicit '楼间配送'
+            const r = String(rec.routeId || '').toLowerCase();
+            if (r.includes('楼间')) areaMap[area].city++;
+            // 快递
+            if (isTakeawayOrder(rec)) areaMap[area].express++; else areaMap[area].express++;
+            const tLow = String(rec.type || '').toLowerCase();
+            if (tLow.includes('冷藏')) areaMap[area].cold++;
+            else if (tLow.includes('冷冻')) areaMap[area].frozen++;
+            else areaMap[area].normal++;
+        });
+
+        // 填充统计卡
+        if (totalCountLabel) totalCountLabel.innerText = totalOrders;
+        if (todayCountLabel) todayCountLabel.innerText = todayOrders;
+        if (expressCountLabel) expressCountLabel.innerText = expressCount;
+        if (takeawayCountLabel) takeawayCountLabel.innerText = takeawayCount;
+
+        // 填充订单类别饼图（快递 / 外卖）
+        if (pieCategoryChart) {
+            // 饼图配色：快递 -> 黄色，城配 -> 蓝色
+            const pieCatOpt = {
+                color: ['#f6c85f', '#5470c6'],
+                tooltip: { trigger: 'item' },
+                legend: { orient: 'vertical', top: '10%', right: '6%' },
+                series: [{
+                    type: 'pie',
+                    avoidLabelOverlap: false,
+                    label: { show: false, position: 'center' },
+                    data: [
+                        { value: expressCount, name: '快递' },
+                        { value: takeawayCount, name: '城配' }
+                    ]
+                }]
+            };
+            pieCategoryChart.setOption(pieCatOpt, true);
+        }
+
+        // 填充订单状态饼图
+        incompleteCount = (statusCounts['待取件'] || 0) + (statusCounts['运输中'] || 0);
+        deliveredCount = (statusCounts['已送达'] || 0) + (statusCounts['已取消'] || 0);
+        exceptionCount = statusCounts['异常'] || 0;
+        if (pieStatusChart) {
+            // 饼图配色：未完成 -> 蓝色，已完成 -> 绿色，异常 -> 红色
+            const pieStatusOpt = {
+                color: ['#5470c6', '#91cc75', '#d94e4e'],
+                tooltip: { trigger: 'item' },
+                legend: { orient: 'vertical', top: '10%', right: '6%' },
+                series: [{
+                    type: 'pie',
+                    avoidLabelOverlap: false,
+                    label: { show: false, position: 'center' },
+                    left: '-2vw',
+                    data: [
+                        { value: incompleteCount, name: '未完成' },
+                        { value: deliveredCount, name: '已完成' },
+                        { value: exceptionCount, name: '异常' }
+                    ]
+                }]
+            };
+            pieStatusChart.setOption(pieStatusOpt, true);
+        }
+
+        // 填充片区表格
+        if (areaTableDom && areaTableDom.tBodies && areaTableDom.tBodies.length > 0) {
+            const tbody = areaTableDom.tBodies[0];
+            tbody.innerHTML = '';
+            Object.keys(areaMap).forEach(areaName => {
+                const r = areaMap[areaName];
+                const tr = document.createElement('tr');
+                tr.innerHTML = `\n <td>${areaName}</td>\n <td>${r.city}</td>\n <td>${r.express}</td>\n <td>${r.normal}</td>\n <td>${r.cold}</td>\n <td>${r.frozen}</td>\n `;
+                tbody.appendChild(tr);
+            });
+            // 保证至少预留三行（无数据时显示占位符）
+            while (tbody.rows.length < 3) {
+                const trEmpty = document.createElement('tr');
+                trEmpty.innerHTML = `\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n `;
+                tbody.appendChild(trEmpty);
+            }
+        }
+
+        // 为每个主图分别聚合并渲染（使用各自的 mode）
+        const totalData = aggregateForMode(totalMode, list, statsAll);
+        const typeData = aggregateForMode(typeMode, list, statsAll);
+
+        // 若两个图都无数据，展示无数据提示
+        if ((!totalData.allKeys || totalData.allKeys.length === 0) && (!typeData.allKeys || typeData.allKeys.length === 0)) {
             totalChart.clear();
             typeChart.clear();
-            totalChart.setOption({
-                title: { text: '订单总量统计（无数据）' }
-            });
-            typeChart.setOption({
-                title: { text: '订单种类统计（无数据）' }
-            });
+            const emptyLabel = isVehiclePage ? '车辆' : '订单';
+            totalChart.setOption({ title: { text: `${emptyLabel}总量统计（无数据）` } });
+            typeChart.setOption({ title: { text: `${emptyLabel}类型统计（无数据）` } });
             return;
         }
 
-        const chosen = pickRecentBuckets(allKeys);
-        // 注意：pickRecentBuckets 已返回长度为 5 的数组，且当需要时已对数据项居中排列（占位用空字符串 ""）。
-        // 因此不再需要额外的排序步骤。
-
-        // 准备总量统计数据
-        const totalSeries = chosen.map(k => buckets[k] ? buckets[k].total : 0);
-
-        // 准备类型堆叠数据：每个 type 都是一个 series，数据长度为 chosen.length
-        const types = Array.from(typesSet);
-        const typeSeries = types.map(typeName => {
-        const data = chosen.map(k => (buckets[k] && buckets[k].types[typeName]) ? buckets[k].types[typeName] : 0);
-        return {
-            name: typeName,
-            type: 'bar',
-            stack: 'total',
-            emphasis: { focus: 'series' },
-            data,
-        };
-        });
-
-        // 渲染订单总量柱状图
+        const label = isVehiclePage ? '车辆' : '订单';
         const totalOpt = {
-            title: { text: '订单总量统计（按 ' + (mode === 'year' ? '年' : mode === 'month' ? '月' : '日') + '）' },
             tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
-            yAxis: { type: 'value', name: '订单数量' },
-            series: [{ name: '订单总量', type: 'bar', data: totalSeries, itemStyle: { color: '#5470c6' } }],
+            xAxis: { type: 'category', data: totalData.chosen, name: totalMode === 'year' ? '年' : totalMode === 'month' ? '月' : '日' },
+            yAxis: { type: 'value', name: `${label}数量` },
+            series: [{ name: `${label}总量`, type: 'bar', data: totalData.totalSeries, itemStyle: { color: '#5470c6' }, barMaxWidth: 36 }],
+            barCategoryGap: '40%',
             grid: { left: '6%', right: '4%', bottom: '8%' }
         };
         totalChart.setOption(totalOpt, true);
 
-        // 渲染种类堆叠图
+        // 定义类型颜色映射（柱状/折线图）
+        function getTypeColor(typeName) {
+            const n = String(typeName || '').toLowerCase();
+            if (n.includes('普通')) return '#91cc75'; // 绿色
+            if (n.includes('特快')) return '#f6c85f'; // 黄色
+            if (n.includes('冷藏')) return '#9ad0ff'; // 浅蓝
+            if (n.includes('冷冻')) return '#5470c6'; // 蓝色
+            return '#999999';
+        }
+
+        const mappedSeries = typeData.typeSeries.map(s => {
+            const color = getTypeColor(s.name);
+            return Object.assign({ barMaxWidth: 28, itemStyle: { color } }, s);
+        });
+
         const typeOpt = {
-            title: { text: '订单种类统计（堆叠）' },
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-            legend: { data: types },
-            xAxis: { type: 'category', data: chosen },
+            legend: { data: typeData.types },
+            xAxis: { type: 'category', data: typeData.chosen },
             yAxis: { type: 'value', name: '数量' },
-            series: typeSeries,
+            series: mappedSeries,
+            barCategoryGap: '40%',
             grid: { left: '6%', right: '6%', bottom: '8%' }
         };
         typeChart.setOption(typeOpt, true);
 
-        // 渲染占位图表 1
-        const extraOpt1 = {
-            title: { text: '占位图：指标 A' },
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
-            yAxis: { type: 'value', name: '值' },
-            series: [{
-                name: '示例数据',
-                type: 'bar',
-                data: chosen.map(k => (buckets[k] && buckets[k].total) ? Math.round((buckets[k].total || 0) * 0.2) : 0),
-                itemStyle: { color: '#91cc75' }
-            }],
-            grid: { left: '6%', right: '6%', bottom: '8%' }
-        };
-        extraChart1.setOption(extraOpt1, true);
+        // 占位图表 1：示例指标
+        if (extraChart1) {
+            const extraOpt1 = {
+                title: { text: '占位图：指标 A' },
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
+                yAxis: { type: 'value', name: '值' },
+                series: [{ name: '示例数据', type: 'bar', data: chosen.map(k => (buckets[k] && buckets[k].total) ? Math.round((buckets[k].total || 0) * 0.2) : 0), itemStyle: { color: '#91cc75' } }],
+                grid: { left: '6%', right: '6%', bottom: '8%' }
+            };
+            extraChart1.setOption(extraOpt1, true);
+        }
 
-        // 渲染占位图表 2
-        const extraOpt2 = {
-            title: { text: '占位图：趋势 B' },
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
-            yAxis: { type: 'value', name: '值' },
-            series: [{
-                name: '示例趋势',
-                type: 'line',
-                smooth: true,
-                data: chosen.map(k => 0)
-            }],
-            grid: { left: '6%', right: '6%', bottom: '8%' }
-        };
-        extraChart2.setOption(extraOpt2, true);
-        // 在渲染后触发一次 resize，确保基于新 CSS 高度正确绘制（短延时避免布局抖动）
-        setTimeout(() => {
-            allCharts.forEach(c => { try { c && c.resize(); } catch (e) { /* ignore */ } });
-        }, 120);
+        // 占位图表 2：示例趋势
+        if (extraChart2) {
+            const extraOpt2 = {
+                title: { text: '占位图：趋势 B' },
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
+                yAxis: { type: 'value', name: '值' },
+                series: [{ name: '示例趋势', type: 'line', smooth: true, data: chosen.map(k => 0) }],
+                grid: { left: '6%', right: '6%', bottom: '8%' }
+            };
+            extraChart2.setOption(extraOpt2, true);
+        }
+
+        // resize 一次以修正渲染
+        setTimeout(() => { allCharts.forEach(c => { try { c && c.resize(); } catch (e) {} }); }, 120);
     }
+
+    refreshAndRender();
 });
