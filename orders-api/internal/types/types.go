@@ -80,12 +80,29 @@ type OrderUpdateReq struct {
 }
 
 type StatsResp struct {
-	TotalCount TimeSeriesStats            `json:"totalCount"`
-	TypeCount  map[string]TimeSeriesStats `json:"typeCount"`
+	TotalCount         int                        `json:"totalCount"`
+	TodayCount         int                        `json:"todayCount"`
+	ExpressCount       int                        `json:"expressCount"`
+	CityCount          int                        `json:"cityCount"`
+	CompletedCount     int                        `json:"completedCount"`
+	IncompleteCount    int                        `json:"incompleteCount"`
+	AbnormalCount      int                        `json:"abnormalCount"`
+	ZoneCountTable     map[string]ZoneCount       `json:"zoneCountTable"`
+	TotalCountWithTime TimeSeriesStats            `json:"totalCountWithTime"`
+	TypeCount          map[string]TimeSeriesStats `json:"typeCount"` // TypeCount 按订单类型分解，每个类型返回其年/月/日的时间序列统计
 }
 
 type TimeSeriesStats struct {
 	YearStats  []DateCount `json:"yearStats"`
 	MonthStats []DateCount `json:"monthStats"`
 	DayStats   []DateCount `json:"dayStats"`
+}
+
+type ZoneCount struct {
+	Express int `json:"express"`
+	City    int `json:"city"`
+	Normal  int `json:"normal"`
+	Urgent  int `json:"urgent"`
+	Cold    int `json:"cold"`
+	Frozen  int `json:"frozen"`
 }

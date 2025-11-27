@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -355,8 +356,9 @@ func (d *OrderDAO) Stats() (*types.StatsResp, error) {
 // - start/end: 可选的时间窗口，支持多种时间格式（使用 parseFlexibleTime 解析），当非空时用于 WHERE created_at BETWEEN start AND end
 func (d *OrderDAO) StatsWithOptions(mode string, limit int, start string, end string) (*types.StatsResp, error) {
 	resp := &types.StatsResp{
-		TotalCount: types.TimeSeriesStats{},
-		TypeCount:  map[string]types.TimeSeriesStats{},
+		ZoneCountTable:     map[string]types.ZoneCount{},
+		TotalCountWithTime: types.TimeSeriesStats{},
+		TypeCount:          map[string]types.TimeSeriesStats{},
 	}
 
 	// 构建时间范围 WHERE 子句参数
@@ -375,6 +377,143 @@ func (d *OrderDAO) StatsWithOptions(mode string, limit int, start string, end st
 		}
 	}
 	whereBase := "WHERE " + strings.Join(whereParts, " AND ")
+
+	// -----------------------------
+	// 额外统计：总数 / 当日 / 快递 / 城配 / 按片区拆分的 ZoneCountTable
+	// -----------------------------
+	// 1) TotalCount: 在 whereBase 范围内的总订单数
+	// 2) TodayCount: 当天（本地时区）创建的订单数（独立于 start/end）
+	// 3) ExpressCount / CityCount: 基于地址与 type 的简单启发式分类
+	// 4) ZoneCountTable: 根据收件地址解析片区（例如包含“区/市/县/镇/街道”的词）进行分桶，并统计每个分桶中各类数量
+
+	// zone 提取辅助：尝试匹配诸如 xx区/xx市/xx县/xx镇/xx街道 的片区词，否则取地址前 6 个字符作为兜底，空值返回 "未知"
+	zoneRe := regexp.MustCompile(`([^,，\s]+(?:区|市|县|镇|街道))`)
+	extractZone := func(addr string) string {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			return "未知"
+		}
+		if m := zoneRe.FindStringSubmatch(addr); len(m) >= 2 {
+			return m[1]
+		}
+		// 兜底：取前 6 个字符（防止过短），并去掉空白
+		r := []rune(addr)
+		if len(r) <= 6 {
+			return addr
+		}
+		return string(r[:6])
+	}
+
+	// 分类辅助：判断是否城配（city）或快递（express）的启发式规则
+	isCityAddr := func(addr string, typ string) bool {
+		a := strings.ToLower(addr)
+		t := strings.ToLower(typ)
+		// 如果类型包含城配或地址明显表示市内/城区，则视为城配
+		if strings.Contains(t, "城配") || strings.Contains(a, "市内") || strings.Contains(a, "城区") || strings.Contains(a, "市中心") {
+			return true
+		}
+		// 含有区/市/县等并且地址较短（可能为市内地址），也视为城配
+		if (strings.Contains(a, "区") || strings.Contains(a, "市") || strings.Contains(a, "县")) && len(a) < 30 {
+			return true
+		}
+		return false
+	}
+
+	// 初始化计数变量和 Zone 表
+	var totalCount int
+	var todayCount int
+	var expressCount int
+	var cityCount int
+	zoneTable := map[string]types.ZoneCount{}
+
+	// 1) TotalCount：对所有记录计数（不受 start/end 过滤影响）
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM orders").Scan(&totalCount); err != nil {
+		totalCount = 0
+	}
+	resp.TotalCount = totalCount
+
+	// 统计 TodayCount：使用数据库当前日期，计算当天 00:00 到次日 00:00 的范围（不受 start/end 影响）
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM orders WHERE created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY").Scan(&todayCount); err != nil {
+		todayCount = 0
+	}
+	resp.TodayCount = todayCount
+
+	// 3) 状态汇总（已完成 / 未完成 / 异常）——对所有记录进行统计，不受 start/end 影响
+	// 我们先按 status 聚合，然后映射到三类
+	statusRows, err := d.db.Query("SELECT IFNULL(status, ''), COUNT(*) FROM orders GROUP BY status")
+	if err == nil {
+		defer statusRows.Close()
+		var s string
+		var cnt int
+		for statusRows.Next() {
+			if err := statusRows.Scan(&s, &cnt); err != nil {
+				continue
+			}
+			ls := strings.TrimSpace(s)
+			switch ls {
+			case "已完成", "已取消":
+				resp.CompletedCount += cnt
+			case "异常":
+				resp.AbnormalCount += cnt
+			default:
+				// 将运输中/待取件/空值等视为未完成
+				resp.IncompleteCount += cnt
+			}
+		}
+	}
+
+	// 4) Express / City / Zone 表：也使用全量数据（不受 start/end 影响），以便前端显示总体分布
+	qAll := "SELECT created_at, address, `type` FROM orders"
+	rowsAll, err := d.db.Query(qAll)
+	if err == nil {
+		defer rowsAll.Close()
+		for rowsAll.Next() {
+			var createdAt sql.NullString
+			var address sql.NullString
+			var tp sql.NullString
+			if err := rowsAll.Scan(&createdAt, &address, &tp); err != nil {
+				continue
+			}
+			addr := ""
+			if address.Valid {
+				addr = address.String
+			}
+			typ := ""
+			if tp.Valid {
+				typ = tp.String
+			}
+
+			zone := extractZone(addr)
+			z := zoneTable[zone]
+
+			// 判断类别：冷藏/冷冻/特快/普通（严格区分冷藏与冷冻）
+			lowType := strings.ToLower(typ)
+			if strings.Contains(lowType, "冷冻") {
+				z.Frozen++
+			} else if strings.Contains(lowType, "冷藏") {
+				z.Cold++
+			} else if strings.Contains(lowType, "特") || strings.Contains(lowType, "急") {
+				z.Urgent++
+			} else {
+				z.Normal++
+			}
+
+			// 城配 vs 快递 判定
+			if isCityAddr(addr, typ) {
+				z.City++
+				cityCount++
+			} else {
+				z.Express++
+				expressCount++
+			}
+
+			zoneTable[zone] = z
+		}
+	}
+
+	resp.ExpressCount = expressCount
+	resp.CityCount = cityCount
+	resp.ZoneCountTable = zoneTable
 
 	// 帮助函数：按格式获取最近的 limit 个日期字符串（降序 -> 返回升序结果）
 	getRecentDates := func(dateFormat string) ([]string, error) {
@@ -508,21 +647,21 @@ func (d *OrderDAO) StatsWithOptions(mode string, limit int, start string, end st
 		if err != nil {
 			return resp, err
 		}
-		resp.TotalCount.YearStats = ys
+		resp.TotalCountWithTime.YearStats = ys
 	}
 	if mode == "" || mode == "month" {
 		ms, err := runTotal("%Y-%m", "DATE_FORMAT(created_at, '%Y-%m')")
 		if err != nil {
 			return resp, err
 		}
-		resp.TotalCount.MonthStats = ms
+		resp.TotalCountWithTime.MonthStats = ms
 	}
 	if mode == "" || mode == "day" {
 		ds, err := runTotal("%Y-%m-%d", "DATE_FORMAT(created_at, '%Y-%m-%d')")
 		if err != nil {
 			return resp, err
 		}
-		resp.TotalCount.DayStats = ds
+		resp.TotalCountWithTime.DayStats = ds
 	}
 
 	// 按类型

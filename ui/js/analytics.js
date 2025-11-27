@@ -214,9 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function aggregateForMode(mode, list, statsAll) {
         const buckets = {}; // { key: { total: n, types: {typeName: n} } }
         const typesSet = new Set();
-        if (statsAll && statsAll.totalCount) {
+        if (statsAll && statsAll.totalCountWithTime) {
+            // 后端已返回预聚合的时间序列，优先使用它（字段名：totalCountWithTime、typeCount）
             const modeKey = mode === 'year' ? 'yearStats' : mode === 'month' ? 'monthStats' : 'dayStats';
-            const totalArr = (statsAll.totalCount && statsAll.totalCount[modeKey]) ? statsAll.totalCount[modeKey] : [];
+            const totalArr = (statsAll.totalCountWithTime && statsAll.totalCountWithTime[modeKey]) ? statsAll.totalCountWithTime[modeKey] : [];
             totalArr.forEach(item => {
                 const k = item.date || '';
                 if (!buckets[k]) buckets[k] = { total: 0, types: {} };
@@ -273,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let takeawayCount = 0;
         const statusCounts = {}; // status -> count
         const typeCountsOverall = {}; // type -> count
-        const areaMap = {}; // area -> { city: n, express: n, normal: n, cold: n, frozen: n }
+        const areaMap = {}; // area -> { city: n, express: n, normal: n, u  rgent: n, cold: n, frozen: n }
 
         list.forEach(rec => {
             totalOrders++;
@@ -295,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     area = String(rec.address).slice(0,6);
                 }
             } catch (e) {}
-            if (!areaMap[area]) areaMap[area] = { city:0, express:0, normal:0, cold:0, frozen:0 };
+            if (!areaMap[area]) areaMap[area] = { city:0, express:0, normal:0, urgent:0, cold:0, frozen:0 };
             // 城配判定：routeId 含 '楼间' or explicit '楼间配送'
             const r = String(rec.routeId || '').toLowerCase();
             if (r.includes('楼间')) areaMap[area].city++;
@@ -304,18 +305,31 @@ document.addEventListener('DOMContentLoaded', () => {
             const tLow = String(rec.type || '').toLowerCase();
             if (tLow.includes('冷藏')) areaMap[area].cold++;
             else if (tLow.includes('冷冻')) areaMap[area].frozen++;
+            else if (tLow.includes('加急') || tLow.includes('急件')) areaMap[area].urgent++;
             else areaMap[area].normal++;
         });
 
+        // 优先使用后端一次性统计（若可用），否则回退为前端逐条聚合的结果
+        let dispTotal = totalOrders;
+        let dispToday = todayOrders;
+        let dispExpress = expressCount;
+        let dispTakeaway = takeawayCount;
+        if (statsAll) {
+            if (typeof statsAll.totalCount === 'number') dispTotal = statsAll.totalCount;
+            if (typeof statsAll.todayCount === 'number') dispToday = statsAll.todayCount;
+            if (typeof statsAll.expressCount === 'number') dispExpress = statsAll.expressCount;
+            if (typeof statsAll.cityCount === 'number') dispTakeaway = statsAll.cityCount; // cityCount 为城配
+        }
         // 填充统计卡
-        if (totalCountLabel) totalCountLabel.innerText = totalOrders;
-        if (todayCountLabel) todayCountLabel.innerText = todayOrders;
-        if (expressCountLabel) expressCountLabel.innerText = expressCount;
-        if (takeawayCountLabel) takeawayCountLabel.innerText = takeawayCount;
+        if (totalCountLabel) totalCountLabel.innerText = dispTotal;
+        if (todayCountLabel) todayCountLabel.innerText = dispToday;
+        if (expressCountLabel) expressCountLabel.innerText = dispExpress;
+        if (takeawayCountLabel) takeawayCountLabel.innerText = dispTakeaway;
 
-        // 填充订单类别饼图（快递 / 外卖）
+        // 填充订单类别饼图（快递 / 城配）——优先使用后端统计
         if (pieCategoryChart) {
-            // 饼图配色：快递 -> 黄色，城配 -> 蓝色
+            const vExpress = statsAll && typeof statsAll.expressCount === 'number' ? statsAll.expressCount : expressCount;
+            const vCity = statsAll && typeof statsAll.cityCount === 'number' ? statsAll.cityCount : takeawayCount;
             const pieCatOpt = {
                 color: ['#f6c85f', '#5470c6'],
                 tooltip: { trigger: 'item' },
@@ -325,20 +339,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     avoidLabelOverlap: false,
                     label: { show: false, position: 'center' },
                     data: [
-                        { value: expressCount, name: '快递' },
-                        { value: takeawayCount, name: '城配' }
+                        { value: vExpress, name: '快递' },
+                        { value: vCity, name: '城配' }
                     ]
                 }]
             };
             pieCategoryChart.setOption(pieCatOpt, true);
         }
 
-        // 填充订单状态饼图
-        incompleteCount = (statusCounts['待取件'] || 0) + (statusCounts['运输中'] || 0);
-        deliveredCount = (statusCounts['已送达'] || 0) + (statusCounts['已取消'] || 0);
-        exceptionCount = statusCounts['异常'] || 0;
+        // 填充订单状态饼图——优先使用后端统计（completed / incompleteCount / abnormal）
+        const vIncomplete = statsAll && typeof statsAll.incompleteCount === 'number' ? statsAll.incompleteCount : ((statusCounts['待取件'] || 0) + (statusCounts['运输中'] || 0));
+        const vCompleted = statsAll && typeof statsAll.completedCount === 'number' ? statsAll.completedCount : ((statusCounts['已送达'] || 0) + (statusCounts['已取消'] || 0));
+        const vAbnormal = statsAll && typeof statsAll.abnormalCount === 'number' ? statsAll.abnormalCount : (statusCounts['异常'] || 0);
         if (pieStatusChart) {
-            // 饼图配色：未完成 -> 蓝色，已完成 -> 绿色，异常 -> 红色
             const pieStatusOpt = {
                 color: ['#5470c6', '#91cc75', '#d94e4e'],
                 tooltip: { trigger: 'item' },
@@ -349,29 +362,44 @@ document.addEventListener('DOMContentLoaded', () => {
                     label: { show: false, position: 'center' },
                     left: '-2vw',
                     data: [
-                        { value: incompleteCount, name: '未完成' },
-                        { value: deliveredCount, name: '已完成' },
-                        { value: exceptionCount, name: '异常' }
+                        { value: vIncomplete, name: '未完成' },
+                        { value: vCompleted, name: '已完成' },
+                        { value: vAbnormal, name: '异常' }
                     ]
                 }]
             };
             pieStatusChart.setOption(pieStatusOpt, true);
         }
 
-        // 填充片区表格
+        // 填充片区表格：若后端返回 zoneCountTable，则直接使用它（优先），否则使用前端聚合的 areaMap
+        let finalAreaMap = areaMap;
+        if (statsAll && statsAll.zoneCountTable && typeof statsAll.zoneCountTable === 'object') {
+            finalAreaMap = {};
+            Object.keys(statsAll.zoneCountTable).forEach(k => {
+                const z = statsAll.zoneCountTable[k] || {};
+                finalAreaMap[k] = {
+                    express: (z.express || 0),
+                    city: (z.city || 0),
+                    normal: (z.normal || 0),
+                    urgent: (z.urgent || 0),
+                    cold: (z.cold || 0),
+                    frozen: (z.frozen || 0)
+                };
+            });
+        }
         if (areaTableDom && areaTableDom.tBodies && areaTableDom.tBodies.length > 0) {
             const tbody = areaTableDom.tBodies[0];
             tbody.innerHTML = '';
-            Object.keys(areaMap).forEach(areaName => {
-                const r = areaMap[areaName];
+            Object.keys(finalAreaMap).forEach(areaName => {
+                const r = finalAreaMap[areaName];
                 const tr = document.createElement('tr');
-                tr.innerHTML = `\n <td>${areaName}</td>\n <td>${r.city}</td>\n <td>${r.express}</td>\n <td>${r.normal}</td>\n <td>${r.cold}</td>\n <td>${r.frozen}</td>\n `;
+                tr.innerHTML = `\n <td>${areaName}</td>\n <td>${r.express}</td>\n <td>${r.city}</td>\n <td>${r.normal}</td>\n <td>${r.urgent}</td>\n <td>${r.cold}</td>\n <td>${r.frozen}</td>\n `;
                 tbody.appendChild(tr);
             });
             // 保证至少预留三行（无数据时显示占位符）
             while (tbody.rows.length < 3) {
                 const trEmpty = document.createElement('tr');
-                trEmpty.innerHTML = `\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n `;
+                trEmpty.innerHTML = `\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n <td>-</td>\n `;
                 tbody.appendChild(trEmpty);
             }
         }
@@ -432,9 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const extraOpt1 = {
                 title: { text: '占位图：指标 A' },
                 tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
+                xAxis: { type: 'category', data: totalData.chosen, name: totalMode === 'year' ? '年' : totalMode === 'month' ? '月' : '日' },
                 yAxis: { type: 'value', name: '值' },
-                series: [{ name: '示例数据', type: 'bar', data: chosen.map(k => (buckets[k] && buckets[k].total) ? Math.round((buckets[k].total || 0) * 0.2) : 0), itemStyle: { color: '#91cc75' } }],
+                series: [{ name: '示例数据', type: 'bar', data: totalData.chosen.map(k => (totalData.buckets[k] && totalData.buckets[k].total) ? Math.round((totalData.buckets[k].total || 0) * 0.2) : 0), itemStyle: { color: '#91cc75' } }],
                 grid: { left: '6%', right: '6%', bottom: '8%' }
             };
             extraChart1.setOption(extraOpt1, true);
@@ -445,9 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const extraOpt2 = {
                 title: { text: '占位图：趋势 B' },
                 tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: chosen, name: mode === 'year' ? '年' : mode === 'month' ? '月' : '日' },
+                xAxis: { type: 'category', data: totalData.chosen, name: totalMode === 'year' ? '年' : totalMode === 'month' ? '月' : '日' },
                 yAxis: { type: 'value', name: '值' },
-                series: [{ name: '示例趋势', type: 'line', smooth: true, data: chosen.map(k => 0) }],
+                series: [{ name: '示例趋势', type: 'line', smooth: true, data: totalData.chosen.map(k => 0) }],
                 grid: { left: '6%', right: '6%', bottom: '8%' }
             };
             extraChart2.setOption(extraOpt2, true);
