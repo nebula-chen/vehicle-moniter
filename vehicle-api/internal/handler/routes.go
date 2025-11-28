@@ -35,11 +35,6 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				Handler: HandleWebSocketHandler(serverCtx),
 			},
 			{
-				Method:  http.MethodPost,
-				Path:    "/api/vehicles",
-				Handler: HandleCreateVehicleHandler(serverCtx),
-			},
-			{
 				Method:  http.MethodPut,
 				Path:    "/api/vehicles",
 				Handler: HandleUpdateVehicleHandler(serverCtx),
@@ -56,18 +51,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicles/statelist",
-				Handler: HandleVehiclesListHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/vehicles/staticlist",
+				Path:    "/api/vehicles/infolist",
 				Handler: HandleListVehiclesHandler(serverCtx),
-			},
-			{
-				Method:  http.MethodGet,
-				Path:    "/api/vehicles/summary",
-				Handler: HandleVehiclesSummaryHandler(serverCtx),
 			},
 		},
 	)

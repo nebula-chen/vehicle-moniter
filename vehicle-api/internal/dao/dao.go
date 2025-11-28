@@ -2,8 +2,8 @@ package dao
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"vehicle-api/internal/types"
@@ -43,51 +43,37 @@ func (d *InfluxDao) AddPoint(point *write.Point) error {
 	return nil
 }
 
-func (d *InfluxDao) BuildPoint(vehicleStatus *types.VEH2CLOUD_STATE) (*write.Point, error) {
+func (d *InfluxDao) BuildPoint(vehicleStatus *types.VehicleStateData) (*write.Point, error) {
 
 	// GNSS 时间为毫秒时间戳（UTC 毫秒），直接转换为 time.Time 后使用 UTC()
-	// 不要手动减 8 小时，这会导致带有 +08 时区标识但实际上时间已经调整，从而写入错误的时间点
-	timeStamp := time.UnixMilli(int64(vehicleStatus.TimestampGNSS)).UTC()
+	timeStamp := time.UnixMilli(int64(vehicleStatus.Timestamp)).UTC()
 
-	// 把途经点序列化为 JSON 字符串写入 passPoints 字段（Influx 字段只支持标量类型）
-	var passPointsJSON string
-	if len(vehicleStatus.PassPoints) > 0 {
-		if b, err := json.Marshal(vehicleStatus.PassPoints); err == nil {
-			passPointsJSON = string(b)
-		}
+	// 将部分复杂字段写为简单标量，字段名与 VehicleStateData 保持一致，写入为浮点/数值类型
+	tags := map[string]string{
+		"vehicleId": vehicleStatus.VehicleId,
+	}
+	// categoryCode 作为 tag 便于按车型查询
+	tags["categoryCode"] = strconv.Itoa(vehicleStatus.CategoryCode)
+
+	fields := map[string]interface{}{
+		"timestamp":       vehicleStatus.Timestamp,
+		"speed":           vehicleStatus.Speed,
+		"lon":             vehicleStatus.Lon,
+		"lat":             vehicleStatus.Lat,
+		"heading":         vehicleStatus.Heading,
+		"driveMode":       vehicleStatus.DriveMode,
+		"tapPos":          vehicleStatus.TapPos,
+		"accelPos":        vehicleStatus.AccelPos,
+		"brakeFlag":       vehicleStatus.BrakeFlag,
+		"brakePos":        vehicleStatus.BrakePos,
+		"fuelConsumption": vehicleStatus.FuelConsumption,
+		"soc":             vehicleStatus.Soc,
+		"mileage":         vehicleStatus.Mileage,
+		"accelerationH":   vehicleStatus.AccelerationH,
+		"accelerationV":   vehicleStatus.AccelerationV,
 	}
 
-	point := write.NewPoint("vehicle_status", // measurement name 相当于表名
-		map[string]string{ // Tags, 相当于建立索引
-			"vehicleId": vehicleStatus.VehicleId,
-			"messageId": string(vehicleStatus.MessageId),
-		}, map[string]interface{}{ // Fields, 相当于表的字段
-			"timestampGNSS":   vehicleStatus.TimestampGNSS,
-			"velocityGNSS":    vehicleStatus.VelocityGNSS,
-			"longitude":       vehicleStatus.Position.Longitude,
-			"latitude":        vehicleStatus.Position.Latitude,
-			"heading":         vehicleStatus.Heading,
-			"tapPos":          vehicleStatus.TapPos,
-			"steeringAngle":   vehicleStatus.SteeringAngle,
-			"velocity":        vehicleStatus.Velocity,
-			"accelerationLon": vehicleStatus.AccelerationLon,
-			"accelerationLat": vehicleStatus.AccelerationLat,
-			"accelerationVer": vehicleStatus.AccelerationVer,
-			"yawRate":         vehicleStatus.YawRate,
-			"accelPos":        vehicleStatus.AccelPos,
-			"engineSpeed":     vehicleStatus.EngineSpeed,
-			"engineTorque":    vehicleStatus.EngineTorque,
-			"brakeFlag":       vehicleStatus.BrakeFlag,
-			"brakePos":        vehicleStatus.BrakePos,
-			"brakePressure":   vehicleStatus.BrakePressure,
-			"fuelConsumption": vehicleStatus.FuelConsumption,
-			"driveMode":       vehicleStatus.DriveMode,
-			"destLon":         vehicleStatus.DestLocation.Longitude,
-			"destLat":         vehicleStatus.DestLocation.Latitude,
-			"passPointsNum":   vehicleStatus.PassPointsNum,
-			"passPoints":      passPointsJSON,
-		}, timeStamp)
-
+	point := write.NewPoint("vehicle_status", tags, fields, timeStamp)
 	return point, nil
 }
 
@@ -149,9 +135,9 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 }
 
 // QueryLatestStatus 返回单个 vehicleId 的最新 VEH2CLOUD_STATE
-func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, error) {
-	var out types.VEH2CLOUD_STATE
-	// 使用 Flux 获取 vehicle_status measurement 的最后一条记录并 pivot 字段
+func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VehicleStateData, error) {
+	var out types.VehicleStateData
+	// 使用 Flux 获取 vehicle_status 的最后一条记录
 	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: -30d) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r["vehicleId"]=="%s") |> last() |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")`, d.Bucket, vehicleId)
 	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
 	result, err := queryAPI.Query(context.Background(), flux)
@@ -160,40 +146,103 @@ func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, 
 	}
 	if result.Next() {
 		rec := result.Record()
-		// fill minimal fields; many fields are numeric and may come as float64/int64
-		if v := rec.ValueByKey("velocity"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				out.Velocity = uint16(t)
-			case float64:
-				out.Velocity = uint16(t)
-			}
-		}
-		if v := rec.ValueByKey("longitude"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				out.Position.Longitude = uint32(t)
-			case float64:
-				out.Position.Longitude = uint32(t)
-			}
-		}
-		if v := rec.ValueByKey("latitude"); v != nil {
-			switch t := v.(type) {
-			case int64:
-				out.Position.Latitude = uint32(t)
-			case float64:
-				out.Position.Latitude = uint32(t)
-			}
-		}
+		// 解析常用字段到 VehicleStateData
 		out.VehicleId = vehicleId
-		out.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
-		// 解析 passPoints 字段（途经点 JSON）
-		if v := rec.ValueByKey("passPoints"); v != nil {
-			if sstr, ok := v.(string); ok && sstr != "" {
-				var pts []types.Position2D
-				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
-					out.PassPoints = pts
-				}
+		out.Timestamp = uint64(rec.Time().UTC().UnixMilli())
+		if v := rec.ValueByKey("speed"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Speed = float64(t)
+			case float64:
+				out.Speed = t
+			}
+		}
+		if v := rec.ValueByKey("lon"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Lon = float64(t)
+			case float64:
+				out.Lon = t
+			}
+		}
+		if v := rec.ValueByKey("lat"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Lat = float64(t)
+			case float64:
+				out.Lat = t
+			}
+		}
+		if v := rec.ValueByKey("heading"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Heading = float64(t)
+			case float64:
+				out.Heading = t
+			}
+		}
+		if v := rec.ValueByKey("driveMode"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.DriveMode = int(t)
+			case float64:
+				out.DriveMode = int(t)
+			}
+		}
+		if v := rec.ValueByKey("tapPos"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.TapPos = int(t)
+			case float64:
+				out.TapPos = int(t)
+			}
+		}
+		if v := rec.ValueByKey("accelPos"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.AccelPos = float64(t)
+			case float64:
+				out.AccelPos = t
+			}
+		}
+		if v := rec.ValueByKey("brakeFlag"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.BrakeFlag = int(t)
+			case float64:
+				out.BrakeFlag = int(t)
+			}
+		}
+		if v := rec.ValueByKey("brakePos"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.BrakePos = float64(t)
+			case float64:
+				out.BrakePos = t
+			}
+		}
+		if v := rec.ValueByKey("fuelConsumption"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.FuelConsumption = float64(t)
+			case float64:
+				out.FuelConsumption = t
+			}
+		}
+		if v := rec.ValueByKey("soc"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Soc = float64(t)
+			case float64:
+				out.Soc = t
+			}
+		}
+		if v := rec.ValueByKey("mileage"); v != nil {
+			switch t := v.(type) {
+			case int64:
+				out.Mileage = float64(t)
+			case float64:
+				out.Mileage = t
 			}
 		}
 		return out, nil
@@ -205,7 +254,7 @@ func (d *InfluxDao) QueryLatestStatus(vehicleId string) (types.VEH2CLOUD_STATE, 
 }
 
 // QueryAllVehiclesLatest 返回所有车辆的最新状态（受最近时间窗口限制）
-func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VEH2CLOUD_STATE, error) {
+func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VehicleStateData, error) {
 	// 为避免 pivot 时因不同写入者导致同一字段出现不同类型（string vs unsigned）而报错，
 	// 复用更健壮的按时间范围查询实现：QueryVehiclesLatestInRange
 	// 使用与之前相同的默认时间窗口（最近 30 天）来保持行为一致
@@ -215,7 +264,7 @@ func (d *InfluxDao) QueryAllVehiclesLatest() ([]types.VEH2CLOUD_STATE, error) {
 }
 
 // QueryVehiclesLatestInRange 返回在指定时间区间内每辆车的最新状态
-func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VEH2CLOUD_STATE, error) {
+func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VehicleStateData, error) {
 	// 为避免 pivot 时因不同写入者导致同一字段出现不同类型（string vs unsigned）而报错，
 	// 我们分两次查询：
 	// 1) 查询数值字段并 pivot（longitude/latitude/velocity 等），以获得每车的数值列
@@ -223,7 +272,8 @@ func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VE
 	// 最后把两个结果按 vehicleId 合并返回
 
 	// 数值字段集合（按需添加）
-	numericFields := []string{"timestampGNSS", "velocity", "longitude", "latitude", "heading", "tapPos", "steeringAngle", "accelerationLon", "accelerationLat", "accelerationVer", "yawRate", "accelPos", "engineSpeed", "engineTorque", "brakeFlag", "brakePos", "brakePressure", "fuelConsumption", "driveMode", "destLon", "destLat", "passPointsNum"}
+	// 采用与 VehicleStateData 对应的字段名
+	numericFields := []string{"timestamp", "speed", "lon", "lat", "heading", "tapPos", "accelPos", "brakeFlag", "brakePos", "fuelConsumption", "driveMode", "soc", "mileage", "accelerationH", "accelerationV"}
 	// 构造 numeric filter 子表达式
 	nf := ""
 	for i, f := range numericFields {
@@ -243,55 +293,55 @@ func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VE
 	}
 
 	// 临时 map 用于合并结果，key 为 vehicleId
-	tmp := make(map[string]types.VEH2CLOUD_STATE)
+	tmp := make(map[string]types.VehicleStateData)
 
 	for result.Next() {
 		rec := result.Record()
-		var s types.VEH2CLOUD_STATE
+		var s types.VehicleStateData
 		// vehicleId 为 tag，在 pivot 后仍可通过 ValueByKey 获取
 		if v := rec.ValueByKey("vehicleId"); v != nil {
 			if vs, ok := v.(string); ok {
 				s.VehicleId = vs
 			}
 		}
-		if v := rec.ValueByKey("velocity"); v != nil {
+		if v := rec.ValueByKey("speed"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Velocity = uint16(t)
+				s.Speed = float64(t)
 			case float64:
-				s.Velocity = uint16(t)
+				s.Speed = t
 			}
 		}
-		if v := rec.ValueByKey("longitude"); v != nil {
+		if v := rec.ValueByKey("lon"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = float64(t)
 			case float64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = t
 			case uint64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = float64(t)
 			}
 		}
-		if v := rec.ValueByKey("latitude"); v != nil {
+		if v := rec.ValueByKey("lat"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = float64(t)
 			case float64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = t
 			case uint64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = float64(t)
 			}
 		}
 		if v := rec.ValueByKey("heading"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Heading = uint32(t)
+				s.Heading = float64(t)
 			case float64:
-				s.Heading = uint32(t)
+				s.Heading = t
 			}
 		}
-		// 使用记录时间作为 TimestampGNSS
-		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
+		// 使用记录时间作为 Timestamp
+		s.Timestamp = uint64(rec.Time().UTC().UnixMilli())
 
 		// 保存到临时 map（按 vehicleId 覆盖）
 		if s.VehicleId != "" {
@@ -302,70 +352,16 @@ func (d *InfluxDao) QueryVehiclesLatestInRange(start, end time.Time) ([]types.VE
 		return nil, result.Err()
 	}
 
-	// 查询字符串字段 passPoints（单独查询以避免类型冲突）
-	passFlux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r._field=="passPoints") |> group(columns:["vehicleId"]) |> last()`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339))
-	passResult, err := queryAPI.Query(context.Background(), passFlux)
-	if err != nil {
-		return nil, err
-	}
-	passMap := make(map[string]string)
-	for passResult.Next() {
-		rec := passResult.Record()
-		vid := ""
-		if v := rec.ValueByKey("vehicleId"); v != nil {
-			if vs, ok := v.(string); ok {
-				vid = vs
-			}
-		}
-		if vid == "" {
-			continue
-		}
-		if v := rec.Value(); v != nil {
-			if sstr, ok := v.(string); ok {
-				passMap[vid] = sstr
-			}
-		}
-	}
-	if passResult.Err() != nil {
-		return nil, passResult.Err()
-	}
-
-	// Merge numeric tmp 与 passMap，构造输出切片
-	out := make([]types.VEH2CLOUD_STATE, 0, len(tmp))
-	for vid, s := range tmp {
-		// 填充 passPoints
-		if sstr, ok := passMap[vid]; ok && sstr != "" {
-			var pts []types.Position2D
-			if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
-				s.PassPoints = pts
-			}
-		}
+	// 构造输出切片
+	out := make([]types.VehicleStateData, 0, len(tmp))
+	for _, s := range tmp {
 		out = append(out, s)
 	}
-
-	// 另外，如果有只写了 passPoints 而无 numeric 字段的 vehicle，也把它们包含进来
-	for vid, sstr := range passMap {
-		if _, exists := tmp[vid]; !exists {
-			var s types.VEH2CLOUD_STATE
-			s.VehicleId = vid
-			if pts, err := func() ([]types.Position2D, error) {
-				var p []types.Position2D
-				if err := json.Unmarshal([]byte(sstr), &p); err != nil {
-					return nil, err
-				}
-				return p, nil
-			}(); err == nil {
-				s.PassPoints = pts
-			}
-			out = append(out, s)
-		}
-	}
-
 	return out, nil
 }
 
 // QueryStatesInRange 返回指定 vehicleId 在时间区间内按时间升序的完整状态列表
-func (d *InfluxDao) QueryStatesInRange(vehicleId string, start, end time.Time) ([]types.VEH2CLOUD_STATE, error) {
+func (d *InfluxDao) QueryStatesInRange(vehicleId string, start, end time.Time) ([]types.VehicleStateData, error) {
 	// 使用 pivot 将各字段展平，然后按时间排序返回
 	flux := fmt.Sprintf(`from(bucket:"%s") |> range(start: %s, stop: %s) |> filter(fn:(r)=> r._measurement=="vehicle_status" and r["vehicleId"]=="%s") |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn: "_value") |> sort(columns:["_time"])`, d.Bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), vehicleId)
 	queryAPI := d.InfluxWriter.QueryAPI(d.Org)
@@ -374,83 +370,65 @@ func (d *InfluxDao) QueryStatesInRange(vehicleId string, start, end time.Time) (
 		return nil, err
 	}
 
-	out := make([]types.VEH2CLOUD_STATE, 0)
+	out := make([]types.VehicleStateData, 0)
 	for result.Next() {
 		rec := result.Record()
-		var s types.VEH2CLOUD_STATE
-		// 解析常用字段
+		var s types.VehicleStateData
+		// 解析字段
 		s.VehicleId = vehicleId
-		s.TimestampGNSS = uint64(rec.Time().UTC().UnixMilli())
-		if v := rec.ValueByKey("velocity"); v != nil {
+		s.Timestamp = uint64(rec.Time().UTC().UnixMilli())
+		if v := rec.ValueByKey("speed"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Velocity = uint16(t)
+				s.Speed = float64(t)
 			case float64:
-				s.Velocity = uint16(t)
+				s.Speed = t
 			}
 		}
-		if v := rec.ValueByKey("longitude"); v != nil {
+		if v := rec.ValueByKey("lon"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = float64(t)
 			case float64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = t
 			case uint64:
-				s.Position.Longitude = uint32(t)
+				s.Lon = float64(t)
 			}
 		}
-		if v := rec.ValueByKey("latitude"); v != nil {
+		if v := rec.ValueByKey("lat"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = float64(t)
 			case float64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = t
 			case uint64:
-				s.Position.Latitude = uint32(t)
+				s.Lat = float64(t)
 			}
 		}
-		// 目的地
-		if v := rec.ValueByKey("destLon"); v != nil {
+		if v := rec.ValueByKey("heading"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.DestLocation.Longitude = uint32(t)
+				s.Heading = float64(t)
 			case float64:
-				s.DestLocation.Longitude = uint32(t)
-			case uint64:
-				s.DestLocation.Longitude = uint32(t)
+				s.Heading = t
 			}
 		}
-		if v := rec.ValueByKey("destLat"); v != nil {
+		if v := rec.ValueByKey("driveMode"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.DestLocation.Latitude = uint32(t)
+				s.DriveMode = int(t)
 			case float64:
-				s.DestLocation.Latitude = uint32(t)
-			case uint64:
-				s.DestLocation.Latitude = uint32(t)
+				s.DriveMode = int(t)
 			}
 		}
-		// passPointsNum
-		if v := rec.ValueByKey("passPointsNum"); v != nil {
+		if v := rec.ValueByKey("tapPos"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				s.PassPointsNum = byte(t)
+				s.TapPos = int(t)
 			case float64:
-				s.PassPointsNum = byte(t)
-			case uint64:
-				s.PassPointsNum = byte(t)
+				s.TapPos = int(t)
 			}
 		}
-		// passPoints 字段为 JSON 字符串
-		if v := rec.ValueByKey("passPoints"); v != nil {
-			if sstr, ok := v.(string); ok && sstr != "" {
-				var pts []types.Position2D
-				if err := json.Unmarshal([]byte(sstr), &pts); err == nil {
-					s.PassPoints = pts
-				}
-			}
-		}
-
 		out = append(out, s)
 	}
 	if result.Err() != nil {

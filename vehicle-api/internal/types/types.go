@@ -67,32 +67,6 @@ type UpdateVehicleReq struct {
 	Extra         *string `json:"extra,optional"`
 }
 
-type VEH2CLOUD_STATE struct {
-	VehicleId       string       `json:"vehicleId"`       // 车辆编号：长度 8 个字符，需在云端平台登记，不可缺省
-	MessageId       []byte       `json:"messageId"`       // 消息编号：车端维护的车辆状态信息编号，为[0..2^64 -1]间的自增序列，超过2^64 - 1后，重新从 1 开始计数，云端用以确认消息的接收，不可缺省
-	TimestampGNSS   uint64       `json:"timestampGNSS"`   // GNSS时间戳: GNSS 数据中的时间戳，单位：ms，需要进行转换为东八区 UTC 时间戳，不可缺省，0xFFFFFFFFFFFFFFFF 表示异常
-	VelocityGNSS    uint16       `json:"velocityGNSS"`    // GNSS 速度: [0..20000]，GNSS 数据中的行驶速度，单位：0.01 m/s，不可缺省，0xFFFF 表示异常
-	Position        Position     `json:"position"`        // 位置: 车辆的经纬度及高程信息
-	Heading         uint32       `json:"heading"`         // 航向角: [0..3600000]，正北方向顺时针旋转至与车辆当前运动方向重合所转过的角度，单位为 1e-4°，不可缺省，0xFFFFFFFF 表示异常
-	TapPos          byte         `json:"tapPos"`          // 档位: 枚举类型：[0..50]，0：数据失效；1-20：表示手动档车辆前进档对应档位；21-30：表示手动挡车辆倒档对应档位；31：D档；32：R档；33：P档；34：N档；35：S档；36：L档；37：H档；38；HL 档；39-50：预留，不可缺省，0xFF 表示异常
-	SteeringAngle   uint32       `json:"steeringAngle"`   // 方向盘转角：[0..20000000],方向盘转角，单位：1e-4°，数据偏移量 1000，表示-1000.0000°～1000.0000°,左正右负，0xFFFFFFFF 表示缺省
-	Velocity        uint16       `json:"velocity"`        // 总线速度: [0..20000]，CAN 总线数据中的行驶速度，单位：0.01m/s，0xFFFF 表示缺省
-	AccelerationLon uint16       `json:"accelerationLon"` // 加速度纵向: [0..20000]，车辆行驶纵向加速度，单位：0.01 m/s^2，数据偏移量100，表示-100.00m/s^2 ～ 100.00m/s^2, 不可缺省，0xFFFF 表示异常
-	AccelerationLat uint16       `json:"accelerationLat"` // 横向加速度，同上
-	AccelerationVer uint16       `json:"accelerationVer"` // 垂向加速度，同上
-	YawRate         uint16       `json:"yawRate"`         // 横摆角速度: [0..20000]，横摆角速度，单位：0.01°/s，数据偏移量 100，顺时针旋转为正，不可缺省，0xFFFF 表示异常
-	AccelPos        uint16       `json:"accelPos"`        // 油门开度: [0..1000]，加速踏板开度，单位：0.1%，0xFFFF 表示缺省
-	EngineSpeed     uint16       `json:"engineSpeed"`     // 发动机输出转速: [0..20000]，发动机输出转速，单位：r/min，0xFFFF 表示缺省
-	EngineTorque    uint32       `json:"engineTorque"`    // 发动机扭矩: [0..500000]，发动机输出扭矩，单位：0.01Nm，0xFFFFFFFF 表示缺省
-	BrakeFlag       byte         `json:"brakeFlag"`       // 制动踏板开关：[0..1]，制动踏板是否踩下，0：未踩下，1：踩下，0xFF 表示缺省
-	BrakePos        uint16       `json:"brakePos"`        // 制动踏板开度: [0..1000]，制动踏板开度，单位：0.1%，0xFFFF 表示缺省
-	BrakePressure   uint16       `json:"brakePressure"`   // 制动主缸压力: [0..50000]，主缸制动压力，单位 0.01MPa,，0xFFFF 表示缺省
-	FuelConsumption uint16       `json:"fuelConsumption"` // 油耗: [0..65534]，车辆运行百公里油耗，单位 0.01L/100km，0xFFFF 表示缺省
-	DriveMode       byte         `json:"driveMode"`       // 车辆驾驶模式: 枚举类型：[0..9]，1：人工接管（人工驾驶）；2：单车自控（自动驾驶）；3：云端支持下的人工驾驶；4：云端支持下的自动驾驶；5：非主驾位置人工驾驶（不启用）；6：脱离（非自动驾驶行程自动结束下的接管）；7：远程驾驶（非现场人工驾驶）；8：未处于任何驾驶模式；9：其他未定义状态；0xFF 表示缺省
-	DestLocation    Position2D   `json:"destLocation"`    // 目的地位置：车辆当前驾驶任务的终点位置，POSITION2D 中经度或纬度为异常值时，表示未获取到目的地位置
-	PassPointsNum   byte         `json:"passPointsNum"`   // 途经点数量: [0..255]，0 表示没有途径点，不发送途经点字段，其他取值都均表示
-	PassPoints      []Position2D `json:"passPoints"`      // 途经点: N 个途经点，其中 N 为途径点数量
-}
 
 type VehicleDetailResp struct {
 	Vehicle VehicleInfo       `json:"vehicle"`
@@ -100,18 +74,31 @@ type VehicleDetailResp struct {
 }
 
 type VehicleInfo struct {
-	Id            string `json:"id"`
-	PlateNumber   string `json:"plateNumber"`
-	Type          string `json:"type"`
-	TotalCapacity string `json:"totalCapacity"` // 总容量（字符串描述）
-	Battery       string `json:"battery"`
-	Route         string `json:"route"`
-	Speed         string `json:"speed"`
-	Lng           int64  `json:"lng"` // 经度：乘以 1e7，遵循 Position 编码
-	Lat           int64  `json:"lat"` // 纬度：乘以 1e7，遵循 Position 编码
-	Status        string `json:"status"`
-	CreatedAt     string `json:"createdAt"` // RFC3339 UTC 时间
-	UpdatedAt     string `json:"updatedAt"` // RFC3339 UTC 时间
+	VehicleId         string  `json:"vehicleId"`                  // 车辆编号
+	PlateNo           string  `json:"plateNo"`                    // 车牌号
+	CategoryCode      int     `json:"categoryCode"`               // 车辆类型编码
+	CategoryName      string  `json:"categoryName"`               // 车辆类型
+	VinCode           string  `json:"vinCode"`                    // VIN码
+	VehicleFactory    string  `json:"vehicleFactory"`             // 测试厂商
+	Brand             string  `json:"brand"`                      // 车辆品牌
+	Size              string  `json:"size"`                       // 车辆尺寸(Object -> string)
+	AutoLevel         string  `json:"autoLevel"`                  // 自动驾驶等级
+	VehicleCert       string  `json:"vehicleCert,optional"`       // 非必须, 车辆合格证书文件地址(Object -> string)
+	VehicleInspection string  `json:"vehicleInspection,optional"` // 非必须, 车辆检验报告文件地址(Object -> string)
+	VehicleInvoice    string  `json:"vehicleInvoice,optional"`    // 非必须, 购车发票文件地址(Object -> string)
+	OilConsumption    float64 `json:"oilConsumption,optional"`    // 非必须, 百公里能耗
+	CreateTime        string  `json:"createTime"`                 // 入网时间
+	CertNo            string  `json:"certNo,optional"`            // 非必须, 证书编号, 备注: 指的是云控入网证书
+}
+
+type VehicleInfoReq struct {
+	CategoryCode int `json:"categoryCode,optional"` // 非必须, 车辆类型编码, 不传categoryCode为全部车辆
+}
+
+type VehicleInfoResp struct {
+	Code    int         `json:"code"`             // 错误码，0 表示成功
+	Message string      `json:"message,optional"` // 非必须, 操作信息
+	Data    VehicleInfo `json:"data"`             // 返回的数据对象
 }
 
 type VehicleListResp struct {
@@ -168,12 +155,4 @@ type VehicleStateResp struct {
 	Code    int              `json:"code"`    // 错误码，0 表示成功
 	Message string           `json:"message"` // 操作信息
 	Data    VehicleStateData `json:"data"`    // 返回的数据对象
-}
-
-type VehicleSummaryResp struct {
-	Total     int `json:"total"`
-	InTransit int `json:"inTransit"`
-	Idle      int `json:"idle"`
-	Charging  int `json:"charging"`
-	Abnormal  int `json:"abnormal"`
 }

@@ -32,20 +32,23 @@ func (l *HandleListVehiclesLogic) HandleListVehicles() (*types.VehicleListResp, 
 		return nil, err
 	}
 	resp := &types.VehicleListResp{Vehicles: make([]types.VehicleInfo, 0, len(rows))}
-	for _, r := range rows {
+	for _, m := range rows {
 		vi := types.VehicleInfo{
-			Id:            r["vehicleId"].(string),
-			PlateNumber:   r["plateNumber"].(string),
-			Type:          r["type"].(string),
-			TotalCapacity: r["totalCapacity"].(string),
-			Battery:       r["batteryInfo"].(string),
-			Speed:         "-",
-			Lng:           0,
-			Lat:           0,
-			Status:        r["status"].(string),
-			Route:         r["routeId"].(string),
-			CreatedAt:     r["createdAt"].(string),
-			UpdatedAt:     r["updatedAt"].(string),
+			VehicleId:         m.VehicleId,
+			PlateNo:           m.PlateNo,
+			CategoryCode:      m.CategoryCode,
+			CategoryName:      m.CategoryName,
+			VinCode:           m.VinCode,
+			VehicleFactory:    m.VehicleFactory,
+			Brand:             m.Brand,
+			Size:              m.Size,
+			AutoLevel:         m.AutoLevel,
+			VehicleCert:       m.VehicleCert,
+			VehicleInspection: m.VehicleInspection,
+			VehicleInvoice:    m.VehicleInvoice,
+			OilConsumption:    m.OilConsumption,
+			CreateTime:        m.CreateTime,
+			CertNo:            m.CertNo,
 		}
 		resp.Vehicles = append(resp.Vehicles, vi)
 	}

@@ -1,19 +1,26 @@
 package processor
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"vehicle-api/internal/dao"
 	"vehicle-api/internal/types"
+	"vehicle-api/internal/websocket"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // Processor 负责处理来自VehicleState API的状态并将其持久化到数据库
 type Processor interface {
+	// ProcessState: 仅将状态写入 MySQL（现为内部调用）
 	ProcessState(state *types.VehicleStateData) error
+	// ProcessAndPublish: 将状态写入 MySQL、Influx，并广播到 WebSocket，
+	// 以及在 MySQL 中记录未注册车辆（如果提供 db）。
+	ProcessAndPublish(state *types.VehicleStateData, influx *dao.InfluxDao, hub *websocket.Hub, db *sql.DB) error
 }
 
 // DefaultProcessor 默认实现，使用 MySQLDao 进行写入
@@ -84,4 +91,106 @@ func (p *DefaultProcessor) ProcessState(state *types.VehicleStateData) error {
 
 	logx.Debugf("状态记录保存成功 vehicle=%s ts=%d", state.VehicleId, state.Timestamp)
 	return nil
+}
+
+// ProcessAndPublish 将 VehicleStateData 写入 MySQL（使用 ProcessState）、写入 Influx（如果提供），
+// 并向 WebSocket hub 广播（如果提供）。
+// 为了避免和 svc 包产生循环依赖，hub 和 db 使用 interface{} 类型并进行运行时断言：
+// - influx: *dao.InfluxDao
+// - hub: *websocket.Hub (or nil)
+// - db: *sql.DB (or nil)
+func (p *DefaultProcessor) ProcessAndPublish(state *types.VehicleStateData, influx *dao.InfluxDao, hub *websocket.Hub, db *sql.DB) error {
+	if p == nil || state == nil {
+		return nil
+	}
+
+	// 1) 持久化到 MySQL
+	if err := p.ProcessState(state); err != nil {
+		logx.Errorf("Processor ProcessState error: %v", err)
+		// 不阻断后续操作，记录错误即可
+	}
+
+	// 2) 写入 Influx
+	if influx != nil {
+		pnt, err := influx.BuildPoint(state)
+		if err != nil {
+			logx.Errorf("构建 Influx 点失败: %v", err)
+		} else {
+			// 使用 InfluxDao 封装的 AddPoint（内部会调用 WriteAPI.WritePoint）
+			if err := influx.AddPoint(pnt); err != nil {
+				logx.Errorf("Influx 写入失败: %v", err)
+			}
+		}
+	}
+
+	// 3) 广播到 WebSocket（如果提供 hub）
+	if hub != nil {
+		payload := map[string]interface{}{
+			"vehicleId": state.VehicleId,
+			"timestamp": state.Timestamp,
+			"lon":       state.Lon,
+			"lat":       state.Lat,
+			"speed":     state.Speed,
+			"heading":   state.Heading,
+			"driveMode": state.DriveMode,
+		}
+		if db != nil {
+			var staticInfo struct {
+				PlateNumber   string
+				Type          int
+				TotalCapacity int
+				BatteryInfo   int
+				RouteId       string
+				Status        string
+				Extra         sql.NullString
+			}
+			if err := db.QueryRow("SELECT plate_number, type, total_capacity, battery_info, route_id, status, extra FROM vehicle_list WHERE vehicle_id = ?", state.VehicleId).Scan(&staticInfo.PlateNumber, &staticInfo.Type, &staticInfo.TotalCapacity, &staticInfo.BatteryInfo, &staticInfo.RouteId, &staticInfo.Status, &staticInfo.Extra); err != nil {
+				if err == sql.ErrNoRows {
+					if recErr := recordUnregisteredVehicle(db, state); recErr != nil {
+						logx.Errorf("记录未注册车辆失败: %v", recErr)
+					}
+				} else {
+					logx.Errorf("查询静态信息失败: %v", err)
+				}
+			} else {
+				payload["plateNumber"] = staticInfo.PlateNumber
+				payload["type"] = staticInfo.Type
+				payload["capacity"] = staticInfo.TotalCapacity
+				payload["battery"] = staticInfo.BatteryInfo
+				payload["routeId"] = staticInfo.RouteId
+				payload["status"] = staticInfo.Status
+				if staticInfo.Extra.Valid {
+					payload["extra"] = staticInfo.Extra.String
+				}
+			}
+		}
+
+		if bs, err := json.Marshal(payload); err == nil {
+			hub.Broadcast <- bs
+		} else {
+			logx.Errorf("广播序列化失败: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// recordUnregisteredVehicle 将未在 platform 登记的车辆上报写入或更新到 unregistered_vehicle_reports 表
+func recordUnregisteredVehicle(db *sql.DB, req *types.VehicleStateData) error {
+	if db == nil || req == nil {
+		return fmt.Errorf("nil db or req")
+	}
+	bs, _ := json.Marshal(req)
+	payload := string(bs)
+	now := time.Now()
+
+	res, err := db.Exec("UPDATE unregistered_vehicle_reports SET last_seen = ?, report_count = report_count + 1, last_payload = ? WHERE vehicle_id = ?", now, payload, req.VehicleId)
+	if err != nil {
+		return err
+	}
+	if ra, _ := res.RowsAffected(); ra > 0 {
+		return nil
+	}
+	_, err = db.Exec("INSERT INTO unregistered_vehicle_reports (vehicle_id, first_seen, last_seen, report_count, last_payload) VALUES (?, ?, ?, 1, ?)", req.VehicleId, now, now, payload)
+	return err
 }

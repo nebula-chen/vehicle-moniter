@@ -3,7 +3,6 @@ package svc
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -155,7 +154,55 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		logx.Errorf("VEHState URL not configured")
 	}
 
+	// // 初始化车辆信息API客户端
+	// if c.VEHInfo.URL != "" {
+	// 	ctx.VEHInfoClient = apiclient.NewVEHInfoClient(c.VEHInfo.URL, c.AppId, c.Key)
+	// 	logx.Infof("VEHInfo 客户端已通过以下URL初始化: %s", c.VEHInfo.URL)
+
+	// 	// 启动定时同步任务：每6小时同步一次车辆信息
+	// 	go ctx.startVehicleSyncTask()
+	// } else {
+	// 	logx.Errorf("VEHInfo URL 未配置")
+	// }
+
 	return ctx
+}
+
+// startVehicleSyncTask 启动车辆同步定时任务，每6小时执行一次
+func (sc *ServiceContext) startVehicleSyncTask() {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+
+	sc.executeVehicleSync()
+
+	// 定时执行
+	for range ticker.C {
+		sc.executeVehicleSync()
+	}
+}
+
+// executeVehicleSync 执行一次车辆同步操作
+func (sc *ServiceContext) executeVehicleSync() {
+	// 依赖检查
+	if sc.VEHInfoClient == nil {
+		return
+	}
+	if sc.MySQLDao == nil {
+		return
+	}
+	// 调用逻辑层执行同步
+	syncCtx := context.Background()
+	vehicles, err := sc.VEHInfoClient.GetAllVehicles(nil)
+	if err != nil {
+		return
+	}
+
+	for _, vehicle := range vehicles {
+		if err := sc.MySQLDao.InsertOrUpdateVehicleFromAPI(&vehicle); err != nil {
+		}
+	}
+
+	_ = syncCtx // 保留参数以供未来扩展
 }
 
 // autoMigrate 创建必要的 MySQL 表（使用 IF NOT EXISTS，安全可重入）
@@ -238,22 +285,28 @@ func autoMigrate(db *sql.DB) error {
 	return nil
 }
 
-// 新增 vehicle_list 表：用于保存无人车静态设备信息（车牌、vehicle_id、容量、电池信息、所属线路、录入时间等）
+// 新增 vehicle_list 表：用于保存车辆静态设备信息（包括来自云端平台的车辆信息和内部管理信息）
 // 使用 IF NOT EXISTS 保证安全可重入
 func createVehicleListTable(db *sql.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS vehicle_list (
 		id INT AUTO_INCREMENT PRIMARY KEY,
-		vehicle_id VARCHAR(128) NOT NULL UNIQUE,
-		plate_number VARCHAR(64),
-		type INT,
-		total_capacity INT,
-		battery_info INT,
-		route_id VARCHAR(128),
-		status VARCHAR(64),
-		extra TEXT, -- 备注信息，仅用于文字备注，非 JSON
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		vehicleId VARCHAR(128) NOT NULL UNIQUE,
+		plateNo VARCHAR(64),
+		categoryCode INT,
+		categoryName VARCHAR(128),
+		vinCode VARCHAR(128),
+		vehicleFactory VARCHAR(256),
+		brand VARCHAR(256),
+		size VARCHAR(256),
+		autoLevel VARCHAR(64),
+		vehicleCert VARCHAR(512),
+		vehicleInspection VARCHAR(512),
+		vehicleInvoice VARCHAR(512),
+		oilConsumption DOUBLE,
+		certNo VARCHAR(128),
+		createTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updatedTime DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	return err
@@ -266,166 +319,25 @@ func (sc *ServiceContext) ProcessVehicleState(data *types.VehicleStateData) erro
 		return nil
 	}
 
-	logx.Debugf("处理车辆状态 vehicle=%s ts=%d lon=%.6f lat=%.6f speed=%.2f",
-		data.VehicleId, data.Timestamp, data.Lon, data.Lat, data.Speed)
-
-	// 通过Processor将状态持久化到MySQL
+	// 统一委托给 Processor 进行持久化、Influx 写入与广播（集中管理，便于测试与维护）
 	if sc.Processor != nil {
-		if err := sc.Processor.ProcessState(data); err != nil {
-			logx.Errorf("Processor处理状态失败 vehicle=%s: %v", data.VehicleId, err)
+		if err := sc.Processor.ProcessAndPublish(data, sc.Dao, sc.WSHub, sc.MySQLDB); err != nil {
+			logx.Errorf("Processor 处理并发布状态失败 vehicle=%s: %v", data.VehicleId, err)
+			return err
 		}
 	}
-
-	// 广播最新状态到WebSocket hub
-	if sc.WSHub != nil {
-		payload := map[string]interface{}{
-			"vehicleId": data.VehicleId,
-			"timestamp": data.Timestamp,
-			"lon":       data.Lon,
-			"lat":       data.Lat,
-			"speed":     data.Speed,
-			"heading":   data.Heading,
-			"driveMode": data.DriveMode,
-			"accelPos":  data.AccelPos,
-			"brakePos":  data.BrakePos,
-		}
-
-		bs, _ := json.Marshal(payload)
-		sc.WSHub.Broadcast <- bs
-	}
-
 	return nil
 }
 
-// ProcessState 将 VEH2CLOUD_STATE 写入 Influx，并通过 WebSocket 广播最新状态
-// 该方法保留用于后向兼容，现已不再使用（改为使用ProcessVehicleState）
-func (sc *ServiceContext) ProcessState(req *types.VEH2CLOUD_STATE) error {
-	if sc == nil {
-		return nil
-	}
-
-	// 如果启用了 MySQL，则先检查车辆是否在 vehicle_list 中登记
-	isRegistered := false
-	if sc.MySQLDB != nil {
-		var tmp int
-		err := sc.MySQLDB.QueryRow("SELECT 1 FROM vehicle_list WHERE vehicle_id = ?", req.VehicleId).Scan(&tmp)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				// 车辆未登记，记录到 unregistered_vehicle_reports 表（插入或更新）
-				if recErr := recordUnregisteredVehicle(sc.MySQLDB, req); recErr != nil {
-					logx.Errorf("record unregistered vehicle error: %v", recErr)
-				} else {
-					logx.Infof("recorded unregistered vehicle: %s", req.VehicleId)
-				}
-			} else {
-				logx.Errorf("check vehicle existence error: %v", err)
-			}
-		} else {
-			isRegistered = true
+// ProcessState 将 VehicleStateData 写入 Influx，并通过 WebSocket 广播最新状态
+// 该方法用于直接处理新 API 推送的 VehicleStateData
+func (sc *ServiceContext) ProcessState(req *types.VehicleStateData) error {
+	// 统一委托给 Processor 进行持久化、Influx 写入与广播
+	if sc.Processor != nil {
+		if err := sc.Processor.ProcessAndPublish(req, sc.Dao, sc.WSHub, sc.MySQLDB); err != nil {
+			logx.Errorf("Processor 处理并发布状态失败 vehicle=%s: %v", req.VehicleId, err)
+			return err
 		}
 	}
-
-	// 写入 InfluxDB
-	if sc.Dao == nil {
-		logx.Errorf("no dao configured, skip write")
-	} else {
-		p, err := sc.Dao.BuildPoint(req)
-		if err != nil {
-			logx.Errorf("build point error: %v", err)
-		} else {
-			if err := sc.Dao.AddPoint(p); err != nil {
-				logx.Errorf("add point error: %v", err)
-			}
-		}
-	}
-
-	// 广播最新状态到 websocket hub
-	if sc.WSHub != nil {
-		// 扩展广播的 payload，包含动态数据和（若注册）静态信息
-		payload := map[string]interface{}{
-			"vehicleId":    req.VehicleId,
-			"timestamp":    req.TimestampGNSS,
-			"lon":          req.Position.Longitude,
-			"lat":          req.Position.Latitude,
-			"velocity":     req.Velocity,
-			"heading":      req.Heading,
-			"velocityGNSS": req.VelocityGNSS,
-		}
-
-		// 若车辆在 vehicle_list 中注册，则查询并附加静态信息
-		if isRegistered && sc.MySQLDB != nil {
-			var staticInfo struct {
-				PlateNumber   string         `db:"plate_number"`
-				Type          int            `db:"type"`
-				TotalCapacity int            `db:"total_capacity"`
-				BatteryInfo   int            `db:"battery_info"`
-				RouteId       string         `db:"route_id"`
-				Status        string         `db:"status"`
-				Extra         sql.NullString `db:"extra"`
-			}
-			err := sc.MySQLDB.QueryRow(
-				"SELECT plate_number, type, total_capacity, battery_info, route_id, status, extra FROM vehicle_list WHERE vehicle_id = ?",
-				req.VehicleId,
-			).Scan(&staticInfo.PlateNumber, &staticInfo.Type, &staticInfo.TotalCapacity, &staticInfo.BatteryInfo, &staticInfo.RouteId, &staticInfo.Status, &staticInfo.Extra)
-			if err != nil {
-				logx.Errorf("query vehicle static info error: %v", err)
-			} else {
-				payload["plateNumber"] = staticInfo.PlateNumber
-				payload["type"] = staticInfo.Type
-				payload["capacity"] = staticInfo.TotalCapacity
-				payload["battery"] = staticInfo.BatteryInfo
-				payload["routeId"] = staticInfo.RouteId
-				payload["status"] = staticInfo.Status
-				if staticInfo.Extra.Valid {
-					payload["extra"] = staticInfo.Extra.String
-				}
-			}
-		}
-
-		// 若目的地可用，按经纬增加到 payload（注意 Position2D 使用 uint32 编码，与 Position 一致）
-		if req.DestLocation.Longitude != 0 || req.DestLocation.Latitude != 0 {
-			payload["destLon"] = req.DestLocation.Longitude
-			payload["destLat"] = req.DestLocation.Latitude
-		}
-
-		// 若存在途经点，直接附加（前端可选择是否绘制）
-		if len(req.PassPoints) > 0 {
-			var pts []map[string]uint32
-			for _, p := range req.PassPoints {
-				pts = append(pts, map[string]uint32{"lon": p.Longitude, "lat": p.Latitude})
-			}
-			payload["passPoints"] = pts
-		}
-
-		bs, _ := json.Marshal(payload)
-		sc.WSHub.Broadcast <- bs
-	}
-
 	return nil
-}
-
-// recordUnregisteredVehicle 将未在 platform 登记的车辆上报写入或更新到 unregistered_vehicle_reports 表
-// - 如果已有记录，则更新 last_seen、report_count 和 last_payload
-// - 否则插入新记录（first_seen/last_seen/report_count=1）
-func recordUnregisteredVehicle(db *sql.DB, req *types.VEH2CLOUD_STATE) error {
-	if db == nil {
-		return fmt.Errorf("nil db")
-	}
-	// 尝试将上报的状态序列化为 JSON 存储到 last_payload 中，便于后续排查
-	bs, _ := json.Marshal(req)
-	payload := string(bs)
-	now := time.Now()
-
-	// 先尝试更新已有记录
-	res, err := db.Exec("UPDATE unregistered_vehicle_reports SET last_seen = ?, report_count = report_count + 1, last_payload = ? WHERE vehicle_id = ?", now, payload, req.VehicleId)
-	if err != nil {
-		return err
-	}
-	if ra, _ := res.RowsAffected(); ra > 0 {
-		return nil
-	}
-
-	// 如果没有更新到行，则插入新记录
-	_, err = db.Exec("INSERT INTO unregistered_vehicle_reports (vehicle_id, first_seen, last_seen, report_count, last_payload) VALUES (?, ?, ?, 1, ?)", req.VehicleId, now, now, payload)
-	return err
 }

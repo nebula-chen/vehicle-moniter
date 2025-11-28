@@ -16,7 +16,7 @@ function toggleSub(el) {
 
 // orders-stats 页面
 document.addEventListener('DOMContentLoaded', () => {
-    // 统一入口：根据页面 data-page 属性选择数据源（订单或车辆）
+    // 统一入口：根据页面 data-page 属性选择数据源（订单）
     const pageType = (document.body && document.body.getAttribute('data-page')) || '';
 
     // 共享的 DOM 元素（两个页面使用相同的 id）
@@ -46,27 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const typeModeBtns = document.getElementById('typeModeBtns');
 
     // 根据页面类型选择 API 与回退示例数据
-    const isVehiclePage = pageType === 'car-stats' || /车|车辆/.test(document.title);
-    const listApi = isVehiclePage ? '/api/vehicle/list' : '/api/order/list';
-    const statsApi = isVehiclePage ? '/api/vehicle/stats?limit=5' : '/api/order/stats?limit=5';
-
-    // 车辆回退示例数据（当后端不可用时使用，字段尽量兼容多种实现）
-    const fallbackVehicleData = [
-        { vehicleId: 'V-SAMPLE-001', type: '电动车', lastActive: '2025-09-10 10:10' },
-        { vehicleId: 'V-SAMPLE-002', type: '燃油车', lastActive: '2025-09-10 09:32' },
-        { vehicleId: 'V-SAMPLE-003', type: '电动车', lastActive: '2025-08-23 14:00' },
-        { vehicleId: 'V-SAMPLE-004', type: '混合动力', lastActive: '2025-09-01 10:00' },
-        { vehicleId: 'V-SAMPLE-005', type: '电动车', lastActive: '2024-06-01 08:00' }
-    ];
-
-    // 订单回退示例（保留原有）
-    const fallbackOrderData = [
-        { orderId: 'SAMPLE-001', type: '普通', startTime: '2025-09-10 10:10' },
-        { orderId: 'SAMPLE-002', type: '特快', startTime: '2025-09-10 09:32' },
-        { orderId: 'SAMPLE-003', type: '冷藏', startTime: '2025-08-23 14:00' },
-        { orderId: 'SAMPLE-004', type: '冷冻', startTime: '2025-09-01 10:00' },
-        { orderId: 'SAMPLE-005', type: '普通', startTime: '2024-06-01 08:00' },
-    ];
+    // 支持 orders-stats 和 car-stats，两者共享同一套渲染逻辑但数据字段可能不同
+    const statsApi = (function() {
+        if (pageType === 'car-stats') return '/api/vehicle/stats?limit=5';
+        // 默认保留订单接口
+        return '/api/order/stats?limit=5';
+    })();
 
     // 初始化图表实例
     const totalChart = echarts.init(totalChartDom);
@@ -111,58 +96,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (statsCache) return statsCache;
         try {
             const res = await fetch(statsApi);
-            if (!res.ok) throw new Error('stats api returned non-2xx');
+            if (!res.ok) {
+                // 抛出包含状态，便于上层捕获并显示详细信息
+                const txt = await res.text().catch(() => 'no body');
+                console.error('statsApi fetch failed', res.status, txt);
+                return null;
+            }
             const json = await res.json();
-            if (json && json.totalCount) {
+            // 仅在后端返回内容（即便没有 totalCount 也认为接口可用，后续由展示逻辑判断字段完整性）
+            if (json) {
                 statsCache = json;
                 return json;
             }
         } catch (e) {
-            // 后端不可用则返回 null，由前端逐条聚合
+            console.error('fetchStatsAll error', e);
         }
         return null;
-    }
-
-    // 通用的列表获取（根据 pageType 切换 API），失败时使用回退示例数据
-    async function fetchList() {
-        try {
-            const res = await fetch(listApi);
-            if (!res.ok) throw new Error('list api returned non-2xx');
-            const json = await res.json();
-            // 某些后端可能包装成 { list: [...] } 或 ordersList
-            if (Array.isArray(json)) return json;
-            if (json && Array.isArray(json.ordersList)) return json.ordersList;
-            if (json && Array.isArray(json.list)) return json.list;
-        } catch (e) {
-            // ignore
-        }
-        return isVehiclePage ? fallbackVehicleData : fallbackOrderData;
-    }
-
-    // 解析多种时间字符串为 Date（兼容 yyyyMMddHHmmss / 带空格 / 带斜杠 等）
-    function parseTime(ts) {
-        if (!ts) return null;
-        if (/^\d{14}$/.test(ts)) {
-            const y = ts.substr(0,4), m = ts.substr(4,2), d = ts.substr(6,2), hh = ts.substr(8,2), mm = ts.substr(10,2), ss = ts.substr(12,2);
-            return new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}`);
-        }
-        const normalized = String(ts).replace(/\s+/, 'T').replace(/\//g, '-');
-        const d = new Date(normalized);
-        if (!isNaN(d)) return d;
-        const tryDate = Date.parse(ts);
-        if (!isNaN(tryDate)) return new Date(tryDate);
-        return null;
-    }
-
-    // 构建聚合桶 key（年 / 月 / 日）
-    function bucketKey(date, mode) {
-        if (!date) return '未知';
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
-        if (mode === 'year') return String(y);
-        if (mode === 'month') return `${y}-${m}`;
-        return `${y}-${m}-${d}`;
     }
 
     // 选取最近最多 5 个时间桶并居中（与订单页面行为一致）
@@ -185,67 +134,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return result;
     }
 
-    // 从一条记录中提取时间字段（兼容多种字段名）
-    function extractTimeFromRecord(rec) {
-        // common candidates for orders and vehicles
-        return rec.StartTime || rec.startTime || rec.starttime || rec.start || rec.lastActive || rec.last_active || rec.lastActiveTime || rec.updateTime || rec.updatedAt || rec.time || rec.timestamp || null;
-    }
-
-    // 从记录中提取类型/分类字段（orders: type, Vehicles: type or status）
-    function extractTypeFromRecord(rec) {
-        return rec.Type || rec.type || rec.vehicleType || rec.status || rec.category || '未知';
-    }
-
-    // 提取订单状态字段
-    function extractStatusFromRecord(rec) {
-        return rec.Status || rec.status || rec.state || '未知';
-    }
-
-    // 判定外卖 vs 快递：
-    // 说明/假设：若订单类型包含“外卖”或“个人”或 routeId 提及“楼间配送”，则视为外卖；否则视为快递。
-    function isTakeawayOrder(rec) {
-        const t = String(rec.type || rec.Type || '').toLowerCase();
-        const r = String(rec.routeId || '').toLowerCase();
-        if (t.includes('外卖') || t.includes('个人') || r.includes('楼间')) return true;
-        return false;
-    }
-
-    // 辅助：根据 mode 聚合并返回用于绘图的数据
-    function aggregateForMode(mode, list, statsAll) {
+    // 辅助：仅使用后端提供的 time-series 数据来构建绘图数据（不再从 list 做逐条回退聚合）
+    function aggregateForMode(mode, statsAll) {
         const buckets = {}; // { key: { total: n, types: {typeName: n} } }
         const typesSet = new Set();
-        if (statsAll && statsAll.totalCountWithTime) {
-            // 后端已返回预聚合的时间序列，优先使用它（字段名：totalCountWithTime、typeCount）
-            const modeKey = mode === 'year' ? 'yearStats' : mode === 'month' ? 'monthStats' : 'dayStats';
-            const totalArr = (statsAll.totalCountWithTime && statsAll.totalCountWithTime[modeKey]) ? statsAll.totalCountWithTime[modeKey] : [];
-            totalArr.forEach(item => {
-                const k = item.date || '';
-                if (!buckets[k]) buckets[k] = { total: 0, types: {} };
-                buckets[k].total = item.count || 0;
-            });
-            if (statsAll.typeCount && typeof statsAll.typeCount === 'object') {
-                Object.keys(statsAll.typeCount).forEach(typeName => {
-                    const ts = statsAll.typeCount[typeName];
-                    const arr = ts && ts[modeKey] ? ts[modeKey] : [];
-                    typesSet.add(typeName);
-                    arr.forEach(item => {
-                        const k = item.date || '';
-                        if (!buckets[k]) buckets[k] = { total: 0, types: {} };
-                        buckets[k].types[typeName] = item.count || 0;
-                    });
+        const modeKey = mode === 'year' ? 'yearStats' : mode === 'month' ? 'monthStats' : 'dayStats';
+        const totalArr = (statsAll && statsAll.totalCountWithTime && statsAll.totalCountWithTime[modeKey]) ? statsAll.totalCountWithTime[modeKey] : [];
+        totalArr.forEach(item => {
+            const k = item.date || '';
+            if (!buckets[k]) buckets[k] = { total: 0, types: {} };
+            buckets[k].total = item.count || 0;
+        });
+        if (statsAll && statsAll.typeCount && typeof statsAll.typeCount === 'object') {
+            Object.keys(statsAll.typeCount).forEach(typeName => {
+                const arr = (statsAll.typeCount[typeName] && statsAll.typeCount[typeName][modeKey]) ? statsAll.typeCount[typeName][modeKey] : [];
+                typesSet.add(typeName);
+                arr.forEach(item => {
+                    const k = item.date || '';
+                    if (!buckets[k]) buckets[k] = { total: 0, types: {} };
+                    buckets[k].types[typeName] = item.count || 0;
                 });
-            }
-        } else {
-            // 逐条聚合
-            list.forEach(rec => {
-                const ts = extractTimeFromRecord(rec);
-                const d = parseTime(ts);
-                const key = bucketKey(d, mode);
-                if (!buckets[key]) buckets[key] = { total: 0, types: {} };
-                buckets[key].total += 1;
-                const t = extractTypeFromRecord(rec);
-                typesSet.add(t);
-                buckets[key].types[t] = (buckets[key].types[t] || 0) + 1;
             });
         }
         const allKeys = Object.keys(buckets).filter(k => k && k !== '未知');
@@ -261,120 +169,189 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 主刷新流程：拉取列表与可选的后端预聚合 stats -> 聚合 -> 渲染
     async function refreshAndRender() {
-        const list = await fetchList();
         const statsAll = await fetchStatsAll();
 
-        // 计算统计卡与饼图数据、片区表
-        // 总数、今日数、快递/外卖
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        let totalOrders = 0;
-        let todayOrders = 0;
-        let expressCount = 0;
-        let takeawayCount = 0;
-        const statusCounts = {}; // status -> count
-        const typeCountsOverall = {}; // type -> count
-        const areaMap = {}; // area -> { city: n, express: n, normal: n, u  rgent: n, cold: n, frozen: n }
-
-        list.forEach(rec => {
-            totalOrders++;
-            const ts = parseTime(extractTimeFromRecord(rec));
-            if (ts && +new Date(ts.getFullYear(), ts.getMonth(), ts.getDate()) === +today) todayOrders++;
-            if (isTakeawayOrder(rec)) takeawayCount++; else expressCount++;
-            const st = extractStatusFromRecord(rec) || '未知';
-            statusCounts[st] = (statusCounts[st] || 0) + 1;
-            const tt = extractTypeFromRecord(rec) || '未知';
-            typeCountsOverall[tt] = (typeCountsOverall[tt] || 0) + 1;
-
-            // 片区判定：优先使用 warehouseId 对应的 area，其次尝试使用 address 字段的前缀
-            let area = '未分片区';
-            try {
-                const stObj = window.getStationById && window.getStationById(rec.warehouseId);
-                if (stObj && stObj.area) area = stObj.area;
-                else if (rec.address) {
-                    // 采用前 6 个字符作为简要片区名的回退方案
-                    area = String(rec.address).slice(0,6);
-                }
-            } catch (e) {}
-            if (!areaMap[area]) areaMap[area] = { city:0, express:0, normal:0, urgent:0, cold:0, frozen:0 };
-            // 城配判定：routeId 含 '楼间' or explicit '楼间配送'
-            const r = String(rec.routeId || '').toLowerCase();
-            if (r.includes('楼间')) areaMap[area].city++;
-            // 快递
-            if (isTakeawayOrder(rec)) areaMap[area].express++; else areaMap[area].express++;
-            const tLow = String(rec.type || '').toLowerCase();
-            if (tLow.includes('冷藏')) areaMap[area].cold++;
-            else if (tLow.includes('冷冻')) areaMap[area].frozen++;
-            else if (tLow.includes('加急') || tLow.includes('急件')) areaMap[area].urgent++;
-            else areaMap[area].normal++;
-        });
-
-        // 优先使用后端一次性统计（若可用），否则回退为前端逐条聚合的结果
-        let dispTotal = totalOrders;
-        let dispToday = todayOrders;
-        let dispExpress = expressCount;
-        let dispTakeaway = takeawayCount;
-        if (statsAll) {
-            if (typeof statsAll.totalCount === 'number') dispTotal = statsAll.totalCount;
-            if (typeof statsAll.todayCount === 'number') dispToday = statsAll.todayCount;
-            if (typeof statsAll.expressCount === 'number') dispExpress = statsAll.expressCount;
-            if (typeof statsAll.cityCount === 'number') dispTakeaway = statsAll.cityCount; // cityCount 为城配
+        // 简单的错误横幅，便于在页面上可见地提示接口异常信息
+        function showErrorBanner(msg, details) {
+            const id = 'analytics-error-banner';
+            let el = document.getElementById(id);
+            if (!el) {
+                el = document.createElement('div');
+                el.id = id;
+                el.style.position = 'relative';
+                el.style.background = '#f8d7da';
+                el.style.color = '#721c24';
+                el.style.border = '1px solid #f5c6cb';
+                el.style.padding = '8px';
+                el.style.margin = '8px 0';
+                el.style.borderRadius = '4px';
+                el.style.fontSize = '13px';
+                if (totalChartDom && totalChartDom.parentNode) totalChartDom.parentNode.insertBefore(el, totalChartDom);
+                else document.body.insertBefore(el, document.body.firstChild);
+            }
+            el.innerText = msg + (details ? ('：' + details) : '');
         }
-        // 填充统计卡
-        if (totalCountLabel) totalCountLabel.innerText = dispTotal;
-        if (todayCountLabel) todayCountLabel.innerText = dispToday;
-        if (expressCountLabel) expressCountLabel.innerText = dispExpress;
-        if (takeawayCountLabel) takeawayCountLabel.innerText = dispTakeaway;
+        function clearErrorBanner() {
+            const el = document.getElementById('analytics-error-banner');
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
 
-        // 填充订单类别饼图（快递 / 城配）——优先使用后端统计
+        if (!statsAll) {
+            console.error('统计接口 statsApi 返回为空或不可用，请检查 statsApi 地址与后端');
+            showErrorBanner('统计接口调用失败：statsApi 返回为空或不可用，请检查后端。');
+            // 清空并设置明确的无数据提示，便于现场排查
+            try { totalChart.clear(); typeChart.clear(); if (pieCategoryChart) pieCategoryChart.clear(); if (pieStatusChart) pieStatusChart.clear(); } catch (e) {}
+            try { totalChart.setOption({ title: { text: '统计数据不可用（接口异常）' } }); typeChart.setOption({ title: { text: '统计数据不可用（接口异常）' } }); } catch (e) {}
+            return;
+        }
+        // 如果成功拿到后端数据，移除错误提示
+        clearErrorBanner();
+
+        // 使用后端预聚合数据填充统计卡（不再使用前端逐条回退聚合）
+        // 订单页面使用原有字段；车辆页面使用车辆专用字段（如果后端字段存在则优先使用）
+        if (pageType === 'car-stats') {
+            // 车辆统计常用字段映射（后端接口可能命名不同，请确保后端返回下列字段或调整此处映射）
+            const deviceTotal = (typeof statsAll.deviceCount === 'number') ? statsAll.deviceCount : (typeof statsAll.totalCount === 'number' ? statsAll.totalCount : 0);
+            const onlineCount = (typeof statsAll.onlineCount === 'number') ? statsAll.onlineCount : 0;
+            const operateCount = (typeof statsAll.operateCount === 'number') ? statsAll.operateCount : 0;
+            const abnormalCount = (typeof statsAll.abnormalCount === 'number') ? statsAll.abnormalCount : 0;
+            const attendanceCount = (typeof statsAll.attendanceCount === 'number') ? statsAll.attendanceCount : 0;
+            const totalMileage = (typeof statsAll.totalMileage === 'number') ? statsAll.totalMileage : 0;
+            const chargePileCount = (typeof statsAll.chargePileCount === 'number') ? statsAll.chargePileCount : 0;
+            const swapCabinetCount = (typeof statsAll.swapCabinetCount === 'number') ? statsAll.swapCabinetCount : 0;
+            // 设置 DOM（如果存在则设置）
+            const deviceTotalLabel = document.getElementById('deviceTotalLabel');
+            const onlineCountLabel = document.getElementById('onlineCountLabel');
+            const operateCountLabel = document.getElementById('operateCountLabel');
+            const abnormalCountLabel = document.getElementById('abnormalCountLabel');
+            const attendanceCountLabel = document.getElementById('attendanceCountLabel');
+            const mileageLabel = document.getElementById('mileageLabel');
+            const chargePileLabel = document.getElementById('chargePileLabel');
+            const swapCabinetLabel = document.getElementById('swapCabinetLabel');
+            if (deviceTotalLabel) deviceTotalLabel.innerText = deviceTotal;
+            if (onlineCountLabel) onlineCountLabel.innerText = onlineCount;
+            if (operateCountLabel) operateCountLabel.innerText = operateCount;
+            if (abnormalCountLabel) abnormalCountLabel.innerText = abnormalCount;
+            if (attendanceCountLabel) attendanceCountLabel.innerText = attendanceCount;
+            if (mileageLabel) mileageLabel.innerText = totalMileage;
+            if (chargePileLabel) chargePileLabel.innerText = chargePileCount;
+            if (swapCabinetLabel) swapCabinetLabel.innerText = swapCabinetCount;
+        } else {
+            // 订单页面原有字段
+            const dispTotal = (typeof statsAll.totalCount === 'number') ? statsAll.totalCount : 0;
+            const dispToday = (typeof statsAll.todayCount === 'number') ? statsAll.todayCount : 0;
+            const dispExpress = (typeof statsAll.expressCount === 'number') ? statsAll.expressCount : 0;
+            const dispTakeaway = (typeof statsAll.cityCount === 'number') ? statsAll.cityCount : 0;
+            if (totalCountLabel) totalCountLabel.innerText = dispTotal;
+            if (todayCountLabel) todayCountLabel.innerText = dispToday;
+            if (expressCountLabel) expressCountLabel.innerText = dispExpress;
+            if (takeawayCountLabel) takeawayCountLabel.innerText = dispTakeaway;
+        }
+
+        // 填充类别饼图：订单页面显示快递/城配，车辆页面显示车辆类型分布（例如：普通/冷藏/冷冻/大容量）
         if (pieCategoryChart) {
-            const vExpress = statsAll && typeof statsAll.expressCount === 'number' ? statsAll.expressCount : expressCount;
-            const vCity = statsAll && typeof statsAll.cityCount === 'number' ? statsAll.cityCount : takeawayCount;
-            const pieCatOpt = {
-                color: ['#f6c85f', '#5470c6'],
-                tooltip: { trigger: 'item' },
-                legend: { orient: 'vertical', top: '10%', right: '6%' },
-                series: [{
-                    type: 'pie',
-                    avoidLabelOverlap: false,
-                    label: { show: false, position: 'center' },
-                    data: [
-                        { value: vExpress, name: '快递' },
-                        { value: vCity, name: '城配' }
-                    ]
-                }]
-            };
-            pieCategoryChart.setOption(pieCatOpt, true);
+            if (pageType === 'car-stats') {
+                // 期望后端返回类似 statsAll.typeCountSummary = { "普通": 10, "冷藏": 5, ... }
+                const summary = (statsAll && statsAll.typeCountSummary && typeof statsAll.typeCountSummary === 'object') ? statsAll.typeCountSummary : null;
+                let data = [];
+                if (summary) {
+                    data = Object.keys(summary).map(k => ({ name: k, value: summary[k] || 0 }));
+                } else if (statsAll && statsAll.typeCount && typeof statsAll.typeCount === 'object') {
+                    // 从 typeCount 的总和构建饼图：取每类的 dayStats 总和
+                    Object.keys(statsAll.typeCount).forEach(typeName => {
+                        const t = statsAll.typeCount[typeName];
+                        let total = 0;
+                        if (t && t.dayStats && Array.isArray(t.dayStats)) total = t.dayStats.reduce((s, it) => s + (it.count || 0), 0);
+                        data.push({ name: typeName, value: total });
+                    });
+                } else {
+                    // 回退为空数据
+                    data = [{ name: '普通', value: 0 }, { name: '冷藏', value: 0 }, { name: '冷冻', value: 0 }];
+                }
+                const pieOpt = {
+                    color: ['#91cc75', '#9ad0ff', '#5470c6', '#f6c85f', '#d94e4e'],
+                    tooltip: { trigger: 'item' },
+                    legend: { orient: 'vertical', top: '10%', right: '6%' },
+                    series: [{ type: 'pie', avoidLabelOverlap: false, label: { show: false, position: 'center' }, data }]
+                };
+                pieCategoryChart.setOption(pieOpt, true);
+            } else {
+                // 订单页面原有饼图（快递 / 城配）
+                const vExpress = (typeof statsAll.expressCount === 'number') ? statsAll.expressCount : 0;
+                const vCity = (typeof statsAll.cityCount === 'number') ? statsAll.cityCount : 0;
+                const pieCatOpt = {
+                    color: ['#f6c85f', '#5470c6'],
+                    tooltip: { trigger: 'item' },
+                    legend: { orient: 'vertical', top: '10%', right: '6%' },
+                    series: [{ type: 'pie', avoidLabelOverlap: false, label: { show: false, position: 'center' }, data: [ { value: vExpress, name: '快递' }, { value: vCity, name: '城配' } ] }]
+                };
+                pieCategoryChart.setOption(pieCatOpt, true);
+            }
         }
 
-        // 填充订单状态饼图——优先使用后端统计（completed / incompleteCount / abnormal）
-        const vIncomplete = statsAll && typeof statsAll.incompleteCount === 'number' ? statsAll.incompleteCount : ((statusCounts['待取件'] || 0) + (statusCounts['运输中'] || 0));
-        const vCompleted = statsAll && typeof statsAll.completedCount === 'number' ? statsAll.completedCount : ((statusCounts['已送达'] || 0) + (statusCounts['已取消'] || 0));
-        const vAbnormal = statsAll && typeof statsAll.abnormalCount === 'number' ? statsAll.abnormalCount : (statusCounts['异常'] || 0);
+        // 填充状态饼图——订单页面/车辆页面共用：车辆页面显示出勤/未出勤/异常等
         if (pieStatusChart) {
-            const pieStatusOpt = {
-                color: ['#5470c6', '#91cc75', '#d94e4e'],
-                tooltip: { trigger: 'item' },
-                legend: { orient: 'vertical', top: '10%', right: '6%' },
-                series: [{
-                    type: 'pie',
-                    avoidLabelOverlap: false,
-                    label: { show: false, position: 'center' },
-                    left: '-2vw',
-                    data: [
-                        { value: vIncomplete, name: '未完成' },
-                        { value: vCompleted, name: '已完成' },
-                        { value: vAbnormal, name: '异常' }
-                    ]
-                }]
-            };
-            pieStatusChart.setOption(pieStatusOpt, true);
+            if (pageType === 'car-stats') {
+                // 期望后端返回 statsAll.attendanceStatus = { "出勤": n, "未出勤": m, "异常": k }
+                const st = (statsAll && statsAll.attendanceStatus && typeof statsAll.attendanceStatus === 'object') ? statsAll.attendanceStatus : null;
+                let data = [];
+                if (st) {
+                    // 规范化状态为三个固定标签：已完成 / 未完成 / 异常
+                    const normalize = (k) => {
+                        if (!k) return k;
+                        const s = String(k).toLowerCase();
+                        if (s.includes('complete') || s.includes('已完成') || s.includes('完成')) return '已完成';
+                        if (s.includes('incomplete') || s.includes('未完成') || s.includes('未 完成')) return '未完成';
+                        if (s.includes('abnorm') || s.includes('异常')) return '异常';
+                        return k; // 其它原始标签保留
+                    };
+                    const counters = { '已完成': 0, '未完成': 0, '异常': 0 };
+                    const others = {};
+                    Object.keys(st).forEach(k => {
+                        const label = normalize(k);
+                        const v = Number(st[k]) || 0;
+                        if (label === '已完成' || label === '未完成' || label === '异常') counters[label] += v;
+                        else others[label] = (others[label] || 0) + v;
+                    });
+                    // 保持顺序：已完成、未完成、异常，然后列出其它（若有）
+                    data = [
+                        { name: '已完成', value: counters['已完成'] },
+                        { name: '未完成', value: counters['未完成'] },
+                        { name: '异常', value: counters['异常'] }
+                    ];
+                    Object.keys(others).forEach(k => data.push({ name: k, value: others[k] }));
+                } else {
+                    // 回退到 completed/incomplete/abnormal 字段（兼容旧接口）
+                    const vIncomplete = (typeof statsAll.incompleteCount === 'number') ? statsAll.incompleteCount : 0;
+                    const vCompleted = (typeof statsAll.completedCount === 'number') ? statsAll.completedCount : 0;
+                    const vAbnormal = (typeof statsAll.abnormalCount === 'number') ? statsAll.abnormalCount : 0;
+                    data = [ { value: vCompleted, name: '已完成' }, { value: vIncomplete, name: '未完成' }, { value: vAbnormal, name: '异常' } ];
+                }
+                const pieOpt = {
+                    color: ['#91cc75', '#5470c6', '#d94e4e', '#f6c85f'],
+                    tooltip: { trigger: 'item' },
+                    legend: { orient: 'vertical', top: '10%', right: '6%' },
+                    series: [{ type: 'pie', avoidLabelOverlap: false, label: { show: false, position: 'center' }, left: '-2vw', data }]
+                };
+                pieStatusChart.setOption(pieOpt, true);
+            } else {
+                // 订单页面原有状态饼图
+                const vIncomplete = (typeof statsAll.incompleteCount === 'number') ? statsAll.incompleteCount : 0;
+                const vCompleted = (typeof statsAll.completedCount === 'number') ? statsAll.completedCount : 0;
+                const vAbnormal = (typeof statsAll.abnormalCount === 'number') ? statsAll.abnormalCount : 0;
+                const pieStatusOpt = {
+                    color: ['#5470c6', '#91cc75', '#d94e4e'],
+                    tooltip: { trigger: 'item' },
+                    legend: { orient: 'vertical', top: '10%', right: '6%' },
+                    series: [{ type: 'pie', avoidLabelOverlap: false, label: { show: false, position: 'center' }, left: '-2vw', data: [ { value: vIncomplete, name: '未完成' }, { value: vCompleted, name: '已完成' }, { value: vAbnormal, name: '异常' } ] }]
+                };
+                pieStatusChart.setOption(pieStatusOpt, true);
+            }
         }
 
-        // 填充片区表格：若后端返回 zoneCountTable，则直接使用它（优先），否则使用前端聚合的 areaMap
-        let finalAreaMap = areaMap;
+        // 填充片区表格：优先使用后端 zoneCountTable，如果没有则显示占位
+        let finalAreaMap = {};
         if (statsAll && statsAll.zoneCountTable && typeof statsAll.zoneCountTable === 'object') {
-            finalAreaMap = {};
             Object.keys(statsAll.zoneCountTable).forEach(k => {
                 const z = statsAll.zoneCountTable[k] || {};
                 finalAreaMap[k] = {
@@ -404,21 +381,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 为每个主图分别聚合并渲染（使用各自的 mode）
-        const totalData = aggregateForMode(totalMode, list, statsAll);
-        const typeData = aggregateForMode(typeMode, list, statsAll);
+        // 为每个主图分别聚合并渲染（仅使用 statsAll）
+        const totalData = aggregateForMode(totalMode, statsAll);
+        const typeData = aggregateForMode(typeMode, statsAll);
 
         // 若两个图都无数据，展示无数据提示
         if ((!totalData.allKeys || totalData.allKeys.length === 0) && (!typeData.allKeys || typeData.allKeys.length === 0)) {
             totalChart.clear();
             typeChart.clear();
-            const emptyLabel = isVehiclePage ? '车辆' : '订单';
+            const emptyLabel = (pageType === 'car-stats') ? '车辆' : '订单';
             totalChart.setOption({ title: { text: `${emptyLabel}总量统计（无数据）` } });
             typeChart.setOption({ title: { text: `${emptyLabel}类型统计（无数据）` } });
             return;
         }
 
-        const label = isVehiclePage ? '车辆' : '订单';
+        const label = (pageType === 'car-stats') ? '车辆' : '订单';
         const totalOpt = {
             tooltip: { trigger: 'axis' },
             xAxis: { type: 'category', data: totalData.chosen, name: totalMode === 'year' ? '年' : totalMode === 'month' ? '月' : '日' },

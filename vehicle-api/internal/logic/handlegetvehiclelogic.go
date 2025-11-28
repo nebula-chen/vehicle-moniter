@@ -32,22 +32,22 @@ func (l *HandleGetVehicleLogic) HandleGetVehicle(vehicleId string) (*types.Vehic
 		return nil, err
 	}
 	vi := types.VehicleInfo{
-		Id:            m["vehicleId"].(string),
-		PlateNumber:   m["plateNumber"].(string),
-		Type:          m["type"].(string),
-		TotalCapacity: m["totalCapacity"].(string),
-		Battery:       m["batteryInfo"].(string),
-		Route:         m["routeId"].(string),
-		Speed:         "-",
-		Lng:           0,
-		Lat:           0,
-		Status:        m["status"].(string),
-		CreatedAt:     m["createdAt"].(string),
-		UpdatedAt:     m["updatedAt"].(string),
+		VehicleId:         m.VehicleId,
+		PlateNo:           m.PlateNo,
+		CategoryCode:      m.CategoryCode,
+		CategoryName:      m.CategoryName,
+		VinCode:           m.VinCode,
+		VehicleFactory:    m.VehicleFactory,
+		Brand:             m.Brand,
+		Size:              m.Size,
+		AutoLevel:         m.AutoLevel,
+		VehicleCert:       m.VehicleCert,
+		VehicleInspection: m.VehicleInspection,
+		VehicleInvoice:    m.VehicleInvoice,
+		OilConsumption:    m.OilConsumption,
+		CreateTime:        m.CreateTime,
+		CertNo:            m.CertNo,
 	}
-	extraMap := make(map[string]string)
-	if extra, ok := m["extra"].(string); ok && extra != "" {
-		extraMap["raw"] = extra
-	}
-	return &types.VehicleDetailResp{Vehicle: vi, Extra: extraMap}, nil
+
+	return &types.VehicleDetailResp{Vehicle: vi}, nil
 }

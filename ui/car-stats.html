@@ -2,7 +2,7 @@
 <html lang="zh-cn">
 <head>
     <meta charset="UTF-8">
-    <title>自动驾驶物流大脑 - 订单数据统计分析</title>
+    <title>自动驾驶物流大脑 - 车辆数据统计分析</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="image/logo.ico" type="image/ico" sizes="32x32">
     <link rel="shortcut icon" href="image/logo.ico" type="image/ico">
@@ -13,7 +13,7 @@
     <script src="js/data.js"></script>
     <script src="js/analytics.js" defer></script>
 </head>
-<body>
+<body data-page="car-stats">
     <div class="container">
         <!-- 左侧导航栏 -->
         <aside class="sidebar">
@@ -81,90 +81,89 @@
 
         <!-- 主体：统计面板 -->
         <div class="main">
-            <h1>订单数据统计分析</h1>
-
+            <h1>车辆数据统计分析</h1>
             <!-- 第一行：统计卡片（左）与饼图（右） -->
             <div class="top-row" style="display:flex;gap:var(--spacing-lg);margin-top:var(--spacing-md);align-items:flex-start;flex-wrap:wrap;">
                 <!-- 统计卡片（左列） -->
                 <div class="stats-column" style="flex:1 1 360px;min-width:260px;display:flex;flex-direction:column;gap:var(--spacing-md);">
                     <div style="display:flex;gap:var(--spacing-md);flex-wrap:wrap;">
                         <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
-                            <div>订单总数</div>
-                            <div id="totalCountLabel">-</div>
+                            <div>设备总数</div>
+                            <div id="deviceTotalLabel">-</div>
                         </div>
                         <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
-                            <div>今日订单数</div>
-                            <div id="todayCountLabel">-</div>
+                            <div>在线车辆数</div>
+                            <div id="onlineCountLabel">-</div>
                         </div>
                     </div>
                     <div style="display:flex;gap:var(--spacing-md);">
                         <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
-                            <div>快递订单数</div>
-                            <div id="expressCountLabel">-</div>
+                            <div>运营车辆数</div>
+                            <div id="operateCountLabel">-</div>
                         </div>
                         <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
-                            <div>城配订单数</div>
-                            <div id="takeawayCountLabel">-</div>
+                            <div>异常车辆数</div>
+                            <div id="abnormalCountLabel">-</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:var(--spacing-md);margin-top:8px;">
+                        <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
+                            <div>车辆出勤次数</div>
+                            <div id="attendanceCountLabel">-</div>
+                        </div>
+                        <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
+                            <div>车辆运行总里程</div>
+                            <div id="mileageLabel">-</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 饼图（右列，左右并排） -->
+                <!-- 饼图（右列）: 车辆类型 & 出勤状态 -->
                 <div class="pies-column" style="flex:1 1 360px;min-width:260px;display:flex;flex-direction:column;gap:var(--spacing-md);">
                     <div class="pies-wrapper">
                         <div id="pieCategoryChart" class="chart-box chart-box-pie"></div>
                         <div id="pieStatusChart" class="chart-box chart-box-pie"></div>
                     </div>
+                    <div style="display:flex;gap:var(--spacing-md);margin-top:8px;">
+                        <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
+                            <div>充电桩数量</div>
+                            <div id="chargePileLabel">-</div>
+                        </div>
+                        <div class="stat-card" style="flex:1 1 160px;border:1px solid var(--border-color);padding:var(--spacing-md);border-radius:var(--radius-md);background:#fff;">
+                            <div>换电柜数量</div>
+                            <div id="swapCabinetLabel">-</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 第二行：片区类别统计表（整行） -->
-            <div id="areaTableContainer" class="chart-box" style="margin-top:var(--spacing-lg);">
-                <div>各片区数据统计</div>
-                <table id="areaTable">
-                    <thead>
-                        <tr>
-                            <th>所属片区</th>
-                            <th>快递</th>
-                            <th>城配</th>
-                            <th>普通</th>
-                            <th>特快</th>
-                            <th>冷藏</th>
-                            <th>冷冻</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- 第三行：两张主图表同行左右 -->
+            <!-- 第三行：两张主图：车辆出勤统计（左）与车辆载货统计（右） -->
             <div class="charts-flex" style="margin-top:var(--spacing-lg);">
-                <div class="chart-box">
+                <div class="chart-box" style="height: 36vh;">
                     <div class="chart-title-row">
-                        <div>订单总量统计</div>
+                        <div>车辆出勤统计</div>
                         <div id="totalModeBtns" style="display:flex;gap:var(--spacing-xs);margin-right: 2%;">
-                            <button data-mode="year" class="mode-btn">年</button>
-                            <button data-mode="month" class="mode-btn">月</button>
-                            <button data-mode="day" class="mode-btn active">日</button>
+                            <button class="mode-btn" data-mode="day">日</button>
+                            <button class="mode-btn" data-mode="month">月</button>
+                            <button class="mode-btn" data-mode="year">年</button>
                         </div>
                     </div>
                     <div id="totalChart" style="width:100%;min-height:320px;height:min(56vh, calc((100vh - 220px) / 2));"></div>
                 </div>
-                <div class="chart-box">
+                <div class="chart-box" style="height: 36vh;">
                     <div class="chart-title-row">
-                        <div>订单类型统计</div>
+                        <div>车辆载货统计</div>
                         <div id="typeModeBtns" style="display:flex;gap:var(--spacing-xs);margin-right: 2%;">
-                            <button data-mode="year" class="mode-btn">年</button>
-                            <button data-mode="month" class="mode-btn">月</button>
-                            <button data-mode="day" class="mode-btn active">日</button>
+                            <button class="mode-btn" data-mode="day">日</button>
+                            <button class="mode-btn" data-mode="month">月</button>
+                            <button class="mode-btn" data-mode="year">年</button>
                         </div>
                     </div>
                     <div id="typeChart" style="width:100%;min-height:320px;height:min(56vh, calc((100vh - 220px) / 2));"></div>
                 </div>
             </div>
+
         </div>
     </div>
-
 </body>
 </html>
