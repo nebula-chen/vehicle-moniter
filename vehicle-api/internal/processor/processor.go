@@ -136,15 +136,15 @@ func (p *DefaultProcessor) ProcessAndPublish(state *types.VehicleStateData, infl
 		}
 		if db != nil {
 			var staticInfo struct {
-				PlateNumber   string
-				Type          int
-				TotalCapacity int
-				BatteryInfo   int
-				RouteId       string
-				Status        string
-				Extra         sql.NullString
+				PlateNo        sql.NullString
+				CategoryCode   sql.NullInt64
+				VinCode        sql.NullString
+				Brand          sql.NullString
+				VehicleFactory sql.NullString
+				CertNo         sql.NullString
+				VehicleInvoice sql.NullString
 			}
-			if err := db.QueryRow("SELECT plate_number, type, total_capacity, battery_info, route_id, status, extra FROM vehicle_list WHERE vehicle_id = ?", state.VehicleId).Scan(&staticInfo.PlateNumber, &staticInfo.Type, &staticInfo.TotalCapacity, &staticInfo.BatteryInfo, &staticInfo.RouteId, &staticInfo.Status, &staticInfo.Extra); err != nil {
+			if err := db.QueryRow("SELECT plateNo, categoryCode, vinCode, brand, vehicleFactory, certNo, vehicleInvoice FROM vehicle_list WHERE vehicleId = ?", state.VehicleId).Scan(&staticInfo.PlateNo, &staticInfo.CategoryCode, &staticInfo.VinCode, &staticInfo.Brand, &staticInfo.VehicleFactory, &staticInfo.CertNo, &staticInfo.VehicleInvoice); err != nil {
 				if err == sql.ErrNoRows {
 					if recErr := recordUnregisteredVehicle(db, state); recErr != nil {
 						logx.Errorf("记录未注册车辆失败: %v", recErr)
@@ -153,14 +153,26 @@ func (p *DefaultProcessor) ProcessAndPublish(state *types.VehicleStateData, infl
 					logx.Errorf("查询静态信息失败: %v", err)
 				}
 			} else {
-				payload["plateNumber"] = staticInfo.PlateNumber
-				payload["type"] = staticInfo.Type
-				payload["capacity"] = staticInfo.TotalCapacity
-				payload["battery"] = staticInfo.BatteryInfo
-				payload["routeId"] = staticInfo.RouteId
-				payload["status"] = staticInfo.Status
-				if staticInfo.Extra.Valid {
-					payload["extra"] = staticInfo.Extra.String
+				if staticInfo.PlateNo.Valid {
+					payload["plateNumber"] = staticInfo.PlateNo.String
+				}
+				if staticInfo.CategoryCode.Valid {
+					payload["categoryCode"] = int(staticInfo.CategoryCode.Int64)
+				}
+				if staticInfo.VinCode.Valid {
+					payload["vinCode"] = staticInfo.VinCode.String
+				}
+				if staticInfo.Brand.Valid {
+					payload["brand"] = staticInfo.Brand.String
+				}
+				if staticInfo.VehicleFactory.Valid {
+					payload["vehicleFactory"] = staticInfo.VehicleFactory.String
+				}
+				if staticInfo.CertNo.Valid {
+					payload["certNo"] = staticInfo.CertNo.String
+				}
+				if staticInfo.VehicleInvoice.Valid {
+					payload["vehicleInvoice"] = staticInfo.VehicleInvoice.String
 				}
 			}
 		}

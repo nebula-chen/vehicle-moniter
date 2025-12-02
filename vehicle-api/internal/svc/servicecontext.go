@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"vehicle-api/internal/apiclient"
 	"vehicle-api/internal/config"
@@ -133,22 +135,77 @@ func NewServiceContext(c config.Config) *ServiceContext {
 			ctx.VEHStateClient = apiClient
 			logx.Infof("VEHState 客户端初始化成功")
 
-			// 启动自动请求协程：定期向 VEHState 服务发送查询请求以触发状态下发
-			go func(sc *ServiceContext, client *apiclient.VEHStateClient) {
-				// 等待短暂时间以确保连接/订阅稳定
-				time.Sleep(3 * time.Second)
-				ticker := time.NewTicker(30 * time.Second)
-				defer ticker.Stop()
-				for {
-					// 发送一次全量或空过滤请求，依赖服务端处理空 vehicleId 为广播或按需返回
-					req := &types.VehicleStateReq{VehicleId: "I1000103"}
-					if err := client.SendRequest(req); err != nil {
-						logx.Errorf("VEHState SendRequest error: %v", err)
+			// 启动接收消息的 worker 池，避免在 readPump 中做耗时处理导致积压
+			// 说明：服务端以有数据就推送，频率 10Hz，此处使用 worker 池来限制并发处理并提供背压监控。
+			workerNum := runtime.NumCPU() // 可根据需要调整为固定值，例如 4 或 8
+			var processedCount uint64
+
+			// 启动 workerNum 个消费者，从 apiClient.Recv 中消费消息并调用 ProcessState
+			for i := 0; i < workerNum; i++ {
+				go func(id int) {
+					logx.Infof("[VEHState worker] 启动 worker %d", id)
+					for {
+						select {
+						case resp, ok := <-apiClient.Recv:
+							if !ok {
+								logx.Infof("[VEHState worker] Recv 通道已关闭，worker %d 退出", id)
+								return
+							}
+							if resp == nil {
+								continue
+							}
+							// 同步处理，ProcessState 内部已异步/持久化逻辑
+							if ctx != nil {
+								if err := ctx.ProcessState(&resp.Data); err != nil {
+									logx.Errorf("[VEHState worker] 处理数据失败 worker=%d vehicle=%s: %v", id, resp.Data.VehicleId, err)
+								}
+							}
+							atomic.AddUint64(&processedCount, 1)
+						case <-apiClient.Done:
+							logx.Infof("[VEHState worker] 收到 Done 信号，worker %d 退出", id)
+							return
+						}
 					}
-					// 等待下一个周期
-					<-ticker.C
+				}(i)
+			}
+
+			// 监控协程：定期打印 Send/Recv 通道长度、已处理计数与 goroutine 数，便于排查背压和性能问题
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				for range ticker.C {
+					sendLen := len(apiClient.Send)
+					recvLen := len(apiClient.Recv)
+					processed := atomic.LoadUint64(&processedCount)
+					goroutines := runtime.NumGoroutine()
+					logx.Infof("[VEHState 监控] Send 长度=%d Recv 长度=%d 已处理=%d goroutines=%d", sendLen, recvLen, processed, goroutines)
 				}
-			}(ctx, apiClient)
+			}()
+
+			// 启动自动请求协程：低频保活或按需查询（保留 30s 作为心跳/按需触发，若不需要可删除）
+			// go func(sc *ServiceContext, client *apiclient.VEHStateClient) {
+			// 	// 等待短暂时间以确保连接/订阅稳定
+			// 	time.Sleep(3 * time.Second)
+			// 	ticker := time.NewTicker(30 * time.Second)
+			// 	defer ticker.Stop()
+			// 	for {
+			// 		// 发送一次查询请求（按需或作为保活），尽量保持低频，避免和 10Hz 推送竞争
+			// 		req := &types.VehicleStateReq{VehicleId: "I1000103"}
+			// 		if err := client.SendRequest(req); err != nil {
+			// 			logx.Errorf("[定时请求] VEHState SendRequest error: %v", err)
+			// 		} else {
+			// 			logx.Infof("[定时请求] VEHState 查询请求已发送 (vehicleId=I1000103)")
+			// 		}
+			// 		// 等待下一个周期
+			// 		select {
+			// 		case <-ticker.C:
+			// 			continue
+			// 		case <-client.Done:
+			// 			logx.Infof("[定时请求] 收到 client.Done，定时请求协程退出")
+			// 			return
+			// 		}
+			// 	}
+			// }(ctx, apiClient)
 		}
 	} else {
 		logx.Errorf("VEHState URL not configured")

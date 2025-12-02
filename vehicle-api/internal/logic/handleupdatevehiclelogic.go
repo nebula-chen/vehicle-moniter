@@ -33,25 +33,10 @@ func (l *HandleUpdateVehicleLogic) HandleUpdateVehicle(req *types.UpdateVehicleR
 	cols := make(map[string]interface{})
 	if req.PlateNumber != nil {
 		// 允许更新为空字符串的场景由调用方决定；这里如果传空字符串也会写入
-		cols["plate_number"] = *req.PlateNumber
+		cols["plateNo"] = *req.PlateNumber
 	}
 	if req.Type != nil {
-		cols["type"] = *req.Type
-	}
-	if req.TotalCapacity != nil {
-		cols["total_capacity"] = *req.TotalCapacity
-	}
-	if req.BatteryInfo != nil {
-		cols["battery_info"] = *req.BatteryInfo
-	}
-	if req.RouteId != nil {
-		cols["route_id"] = *req.RouteId
-	}
-	if req.Status != nil {
-		cols["status"] = *req.Status
-	}
-	if req.Extra != nil {
-		cols["extra"] = *req.Extra
+		cols["categoryCode"] = *req.Type
 	}
 	if len(cols) == 0 {
 		// nothing to update

@@ -331,7 +331,7 @@ func (c *VEHStateClient) writePump() {
 			}
 
 			// 设置写入超时
-			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			c.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 
 			data, err := json.Marshal(msg)
 			if err != nil {
@@ -398,6 +398,13 @@ func (c *VEHStateClient) readPump() {
 				c.OnError(fmt.Errorf("解析响应失败: %w", err))
 			}
 			continue
+		}
+
+		// 不直接处理，推入带缓冲的接收队列
+		select {
+		case c.Recv <- &resp:
+		default:
+			c.logger.Errorf("[ws状态] Recv 队列已满，丢弃消息 vehicle=%s ts=%d", resp.Data.VehicleId, resp.Data.Timestamp)
 		}
 
 		c.logger.Debugf("收到来自 OpenAPI 的响应: %+v", resp)

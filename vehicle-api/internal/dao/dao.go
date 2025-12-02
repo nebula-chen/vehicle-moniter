@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -54,6 +55,14 @@ func (d *InfluxDao) BuildPoint(vehicleStatus *types.VehicleStateData) (*write.Po
 	}
 	// categoryCode 作为 tag 便于按车型查询
 	tags["categoryCode"] = strconv.Itoa(vehicleStatus.CategoryCode)
+	// 将所有 VehicleStateData 字段按名称写入 fields，尽量保持类型一致
+	// 对于数组类型（如 Doors）序列化为 JSON 字符串写入
+	doorsStr := ""
+	if vehicleStatus.Doors != nil {
+		if b, err := json.Marshal(vehicleStatus.Doors); err == nil {
+			doorsStr = string(b)
+		}
+	}
 
 	fields := map[string]interface{}{
 		"timestamp":       vehicleStatus.Timestamp,
@@ -67,10 +76,31 @@ func (d *InfluxDao) BuildPoint(vehicleStatus *types.VehicleStateData) (*write.Po
 		"brakeFlag":       vehicleStatus.BrakeFlag,
 		"brakePos":        vehicleStatus.BrakePos,
 		"fuelConsumption": vehicleStatus.FuelConsumption,
+		"absFlag":         vehicleStatus.AbsFlag,
+		"tcsFlag":         vehicleStatus.TcsFlag,
+		"espFlag":         vehicleStatus.EspFlag,
+		"lkaFlag":         vehicleStatus.LkaFlag,
+		"accMode":         vehicleStatus.AccMode,
+		"fcwFlag":         vehicleStatus.FcwFlag,
+		"ldwFlag":         vehicleStatus.LdwFlag,
+		"aebFlag":         vehicleStatus.AebFlag,
+		"lcaFlag":         vehicleStatus.LcaFlag,
+		"dmsFlag":         vehicleStatus.DmsFlag,
 		"soc":             vehicleStatus.Soc,
 		"mileage":         vehicleStatus.Mileage,
 		"accelerationH":   vehicleStatus.AccelerationH,
 		"accelerationV":   vehicleStatus.AccelerationV,
+		"lowBeam":         vehicleStatus.LowBeam,
+		"highBeam":        vehicleStatus.HighBeam,
+		"leftTurn":        vehicleStatus.LeftTurn,
+		"rightTurn":       vehicleStatus.RightTurn,
+		"hazardSignal":    vehicleStatus.HazardSignal,
+		"automatic":       vehicleStatus.Automatic,
+		"daytimeRunning":  vehicleStatus.DaytimeRunning,
+		"fogLight":        vehicleStatus.FogLight,
+		"parking":         vehicleStatus.Parking,
+		"vehFault":        vehicleStatus.VehFault,
+		"doors":           doorsStr,
 	}
 
 	point := write.NewPoint("vehicle_status", tags, fields, timeStamp)
