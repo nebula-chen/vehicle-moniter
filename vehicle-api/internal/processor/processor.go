@@ -1,208 +1,164 @@
 package processor
 
 import (
-	"database/sql"
-	"encoding/json"
-	"fmt"
+	"context"
 	"sync"
 	"time"
 
+	"github.com/zeromicro/go-zero/core/logx"
+
 	"vehicle-api/internal/dao"
 	"vehicle-api/internal/types"
-	"vehicle-api/internal/websocket"
-
-	"github.com/zeromicro/go-zero/core/logx"
 )
 
-// Processor 负责处理来自VehicleState API的状态并将其持久化到数据库
-type Processor interface {
-	// ProcessState: 仅将状态写入 MySQL（现为内部调用）
-	ProcessState(state *types.VehicleStateData) error
-	// ProcessAndPublish: 将状态写入 MySQL、Influx，并广播到 WebSocket，
-	// 以及在 MySQL 中记录未注册车辆（如果提供 db）。
-	ProcessAndPublish(state *types.VehicleStateData, influx *dao.InfluxDao, hub *websocket.Hub, db *sql.DB) error
+// Processor 负责接收车辆状态数据并异步批量写入 Influx（并为将来扩展到 MySQL 留出位置）
+type Processor struct {
+	dao           *dao.InfluxDao
+	inCh          chan *types.VehicleStateData
+	batchSize     int           // 达到此数量触发写入
+	flushInterval time.Duration // 定时触发写入
+	wg            sync.WaitGroup
+	ctx           context.Context
+	cancel        context.CancelFunc
+	// 限制同时并发写入的 goroutine 数，避免在高并发场景下过多并发
+	writeSem chan struct{}
 }
 
-// DefaultProcessor 默认实现，使用 MySQLDao 进行写入
-type DefaultProcessor struct {
-	MySQL *dao.MySQLDao
-	// per-vehicle 缓存最后一次状态，用于去重
-	lastStates sync.Map // map[string]types.VehicleStateData
+// NewProcessor 创建并启动后台批处理 goroutine
+// sc: 服务上下文（提供 Influx Dao）
+// batchSize: 单批次触发阈值（建议 50-500 之间，视流量与点大小而定）
+// flushInterval: 定时刷新间隔（例如 1s）
+// maxConcurrency: 并发写入限制
+func NewProcessor(d *dao.InfluxDao, batchSize int, flushInterval time.Duration, maxConcurrency int) *Processor {
+	if batchSize <= 0 {
+		batchSize = 200
+	}
+	if flushInterval <= 0 {
+		flushInterval = time.Second
+	}
+	if maxConcurrency <= 0 {
+		maxConcurrency = 4
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &Processor{
+		dao:           d,
+		inCh:          make(chan *types.VehicleStateData, batchSize*4), // 缓冲若干批以吸收突发
+		batchSize:     batchSize,
+		flushInterval: flushInterval,
+		ctx:           ctx,
+		cancel:        cancel,
+		writeSem:      make(chan struct{}, maxConcurrency),
+	}
+
+	p.wg.Add(1)
+	go p.runBatcher()
+	logx.Infof("Processor 已启动: batchSize=%d, flushInterval=%s, maxConcurrency=%d", p.batchSize, p.flushInterval.String(), maxConcurrency)
+	return p
 }
 
-func NewDefaultProcessor(mysqlDao *dao.MySQLDao) *DefaultProcessor {
-	return &DefaultProcessor{MySQL: mysqlDao}
-}
-
-// ProcessState 处理车辆状态数据
-// 将车辆状态写入MySQL进行持久化
-func (p *DefaultProcessor) ProcessState(state *types.VehicleStateData) error {
-	if p == nil || p.MySQL == nil || state == nil {
+// Enqueue 异步入队一条车辆状态数据；在背压或超时时返回错误以便上层处理
+func (p *Processor) Enqueue(data *types.VehicleStateData) error {
+	if data == nil {
 		return nil
 	}
+	select {
+	case p.inCh <- data:
+		return nil
+	case <-time.After(200 * time.Millisecond):
+		// 在极端高压场景下可能会触发，返回错误由调用方决定是否重试
+		logx.Infof("Processor 入队超时，vehicleId=%s 时间戳=%d", data.VehicleId, data.Timestamp)
+		return context.DeadlineExceeded
+	case <-p.ctx.Done():
+		return context.Canceled
+	}
+}
 
-	// 基本校验
-	if state.VehicleId == "" {
-		return fmt.Errorf("empty vehicle id")
+// Close 优雅停止 Processor，会等待正在进行的写入完成
+func (p *Processor) Close() {
+	p.cancel()
+	p.wg.Wait()
+	logx.Infof("Processor 已关闭")
+}
+
+// runBatcher 从 inCh 聚合为批次，按 size 或时间触发写入
+func (p *Processor) runBatcher() {
+	defer p.wg.Done()
+	ticker := time.NewTicker(p.flushInterval)
+	defer ticker.Stop()
+
+	batch := make([]*types.VehicleStateData, 0, p.batchSize)
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		// copy batch 指针切片，避免并发修改
+		toWrite := make([]*types.VehicleStateData, len(batch))
+		copy(toWrite, batch)
+		batch = batch[:0]
+
+		// 限制并发写入数量
+		p.writeSem <- struct{}{}
+		go func(items []*types.VehicleStateData) {
+			defer func() { <-p.writeSem }()
+			if err := p.process2influx(items); err != nil {
+				logx.Errorf("批量写入 Influx 失败: %v", err)
+			}
+		}(toWrite)
 	}
 
-	// 记录接收的状态
-	logx.Debugf("Processor 处理状态 vehicle=%s ts=%d lon=%.6f lat=%.6f speed=%.2f",
-		state.VehicleId, state.Timestamp, state.Lon, state.Lat, state.Speed)
-
-	// 检查是否为重复数据（用于去重）
-	key := state.VehicleId
-	if lastState, ok := p.lastStates.Load(key); ok {
-		if last, ok := lastState.(types.VehicleStateData); ok {
-			// 如果时间戳相同，说明是重复数据，跳过处理
-			if last.Timestamp == state.Timestamp {
-				logx.Debugf("跳过重复数据 vehicle=%s ts=%d", state.VehicleId, state.Timestamp)
-				return nil
+	for {
+		select {
+		case <-p.ctx.Done():
+			// 在退出前把缓冲中的数据写完
+			flush()
+			// 等待所有并发写入完成
+			for i := 0; i < cap(p.writeSem); i++ {
+				p.writeSem <- struct{}{}
 			}
+			return
+		case d := <-p.inCh:
+			batch = append(batch, d)
+			if len(batch) >= p.batchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
 		}
 	}
-	p.lastStates.Store(key, *state)
-
-	// 将状态信息写入MySQL
-	record := struct {
-		VehicleId string
-		Timestamp time.Time
-		Lon       int64
-		Lat       int64
-		Velocity  int
-	}{
-		VehicleId: state.VehicleId,
-		Timestamp: time.UnixMilli(int64(state.Timestamp)).UTC(),
-		Lon:       int64(state.Lon * 1e7), // 转换为1e7倍数
-		Lat:       int64(state.Lat * 1e7),
-		Velocity:  int(state.Speed),
-	}
-
-	if err := p.MySQL.BatchInsertRecords([]struct {
-		VehicleId string
-		Timestamp time.Time
-		Lon       int64
-		Lat       int64
-		Velocity  int
-	}{record}); err != nil {
-		logx.Errorf("保存状态记录失败 vehicle=%s: %v", state.VehicleId, err)
-		return fmt.Errorf("save state failed: %w", err)
-	}
-
-	logx.Debugf("状态记录保存成功 vehicle=%s ts=%d", state.VehicleId, state.Timestamp)
-	return nil
 }
 
-// ProcessAndPublish 将 VehicleStateData 写入 MySQL（使用 ProcessState）、写入 Influx（如果提供），
-// 并向 WebSocket hub 广播（如果提供）。
-// 为了避免和 svc 包产生循环依赖，hub 和 db 使用 interface{} 类型并进行运行时断言：
-// - influx: *dao.InfluxDao
-// - hub: *websocket.Hub (or nil)
-// - db: *sql.DB (or nil)
-func (p *DefaultProcessor) ProcessAndPublish(state *types.VehicleStateData, influx *dao.InfluxDao, hub *websocket.Hub, db *sql.DB) error {
-	if p == nil || state == nil {
+// process2influx 将一批车辆状态数据写入 InfluxDB。
+// 此函数会把每个数据转换为 Influx point 并交由 ServiceContext.Dao 写入（异步写入由 Influx SDK 管理）。
+// 返回错误仅在无法访问 Dao 等严重错误时返回，单条数据转换/写入错误会被记录但不会中断批次其他条目的写入。
+func (p *Processor) process2influx(batch []*types.VehicleStateData) error {
+	if p == nil || p.dao == nil {
 		return nil
 	}
 
-	// 1) 持久化到 MySQL
-	if err := p.ProcessState(state); err != nil {
-		logx.Errorf("Processor ProcessState error: %v", err)
-		// 不阻断后续操作，记录错误即可
-	}
-
-	// 2) 写入 Influx
-	if influx != nil {
-		pnt, err := influx.BuildPoint(state)
+	for _, s := range batch {
+		if s == nil {
+			continue
+		}
+		pt, err := p.dao.BuildPoint(s)
 		if err != nil {
-			logx.Errorf("构建 Influx 点失败: %v", err)
-		} else {
-			// 使用 InfluxDao 封装的 AddPoint（内部会调用 WriteAPI.WritePoint）
-			if err := influx.AddPoint(pnt); err != nil {
-				logx.Errorf("Influx 写入失败: %v", err)
-			}
+			logx.Errorf("构建 Influx 数据点失败，vehicleId=%s err=%v", s.VehicleId, err)
+			continue
+		}
+		// AddPoint 内部使用 WriteAPI.WritePoint，会异步发送给 Influx 的批量机制
+		if err := p.dao.AddPoint(pt); err != nil {
+			logx.Errorf("写入 Influx 点失败，vehicleId=%s err=%v", s.VehicleId, err)
+			// } else {
+			// 	logx.Infof("成功写入 Influx 点，vehicleId=%s timestamp=%d", s.VehicleId, s.Timestamp)
 		}
 	}
-
-	// 3) 广播到 WebSocket（如果提供 hub）
-	if hub != nil {
-		payload := map[string]interface{}{
-			"vehicleId": state.VehicleId,
-			"timestamp": state.Timestamp,
-			"lon":       state.Lon,
-			"lat":       state.Lat,
-			"speed":     state.Speed,
-			"heading":   state.Heading,
-			"driveMode": state.DriveMode,
-		}
-		if db != nil {
-			var staticInfo struct {
-				PlateNo        sql.NullString
-				CategoryCode   sql.NullInt64
-				VinCode        sql.NullString
-				Brand          sql.NullString
-				VehicleFactory sql.NullString
-				CertNo         sql.NullString
-				VehicleInvoice sql.NullString
-			}
-			if err := db.QueryRow("SELECT plateNo, categoryCode, vinCode, brand, vehicleFactory, certNo, vehicleInvoice FROM vehicle_list WHERE vehicleId = ?", state.VehicleId).Scan(&staticInfo.PlateNo, &staticInfo.CategoryCode, &staticInfo.VinCode, &staticInfo.Brand, &staticInfo.VehicleFactory, &staticInfo.CertNo, &staticInfo.VehicleInvoice); err != nil {
-				if err == sql.ErrNoRows {
-					if recErr := recordUnregisteredVehicle(db, state); recErr != nil {
-						logx.Errorf("记录未注册车辆失败: %v", recErr)
-					}
-				} else {
-					logx.Errorf("查询静态信息失败: %v", err)
-				}
-			} else {
-				if staticInfo.PlateNo.Valid {
-					payload["plateNumber"] = staticInfo.PlateNo.String
-				}
-				if staticInfo.CategoryCode.Valid {
-					payload["categoryCode"] = int(staticInfo.CategoryCode.Int64)
-				}
-				if staticInfo.VinCode.Valid {
-					payload["vinCode"] = staticInfo.VinCode.String
-				}
-				if staticInfo.Brand.Valid {
-					payload["brand"] = staticInfo.Brand.String
-				}
-				if staticInfo.VehicleFactory.Valid {
-					payload["vehicleFactory"] = staticInfo.VehicleFactory.String
-				}
-				if staticInfo.CertNo.Valid {
-					payload["certNo"] = staticInfo.CertNo.String
-				}
-				if staticInfo.VehicleInvoice.Valid {
-					payload["vehicleInvoice"] = staticInfo.VehicleInvoice.String
-				}
-			}
-		}
-
-		if bs, err := json.Marshal(payload); err == nil {
-			hub.Broadcast <- bs
-		} else {
-			logx.Errorf("广播序列化失败: %v", err)
-		}
-	}
-
+	// 不等待 Flush，使用 SDK 的批量刷新策略
 	return nil
 }
 
-// recordUnregisteredVehicle 将未在 platform 登记的车辆上报写入或更新到 unregistered_vehicle_reports 表
-func recordUnregisteredVehicle(db *sql.DB, req *types.VehicleStateData) error {
-	if db == nil || req == nil {
-		return fmt.Errorf("nil db or req")
-	}
-	bs, _ := json.Marshal(req)
-	payload := string(bs)
-	now := time.Now()
-
-	res, err := db.Exec("UPDATE unregistered_vehicle_reports SET last_seen = ?, report_count = report_count + 1, last_payload = ? WHERE vehicle_id = ?", now, payload, req.VehicleId)
-	if err != nil {
-		return err
-	}
-	if ra, _ := res.RowsAffected(); ra > 0 {
-		return nil
-	}
-	_, err = db.Exec("INSERT INTO unregistered_vehicle_reports (vehicle_id, first_seen, last_seen, report_count, last_payload) VALUES (?, ?, ?, 1, ?)", req.VehicleId, now, now, payload)
-	return err
+// process2mysql 占位：保留将来实现 MySQL 持久化的接口与注释
+func (p *Processor) process2mysql(batch []*types.VehicleStateData) error {
+	// TODO: 将来实现：把批量数据持久化到 MySQL，可考虑使用插入/更新批处理并保证重复去重/幂等
+	return nil
 }

@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 	"vehicle-api/internal/apiclient"
 	"vehicle-api/internal/config"
@@ -24,12 +22,14 @@ type ServiceContext struct {
 	Config         config.Config
 	WSHub          *websocket.Hub
 	Dao            *dao.InfluxDao
+	Processor      *processor.Processor
 	MySQLDB        *sql.DB
 	MySQLDao       *dao.MySQLDao
-	Processor      processor.Processor
-	VEHStateClient *apiclient.VEHStateClient
 	VEHInfoClient  *apiclient.VEHInfoClient
+	VEHStateClient *apiclient.VEHStateClient
 	OnlineDrones   sync.Map // key: uasID, value: time.Time
+	// VehicleLastProcessed: 跟踪每辆车上一次被处理的时间戳（毫秒），用于实现接收端的降频/采样，避免高频数据导致处理阻塞。
+	VehicleLastProcessed sync.Map // key: vehicleId string, value: int64 (unix ms)
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -52,6 +52,20 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Dao:    dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
 	}
 
+	// 初始化 Processor，用于异步批量写入 Influx
+	// batchSize 使用 InfluxDB 配置的 BatchSize（若为0则使用默认值），flushInterval 使用配置的秒数
+	batchSize := int(c.InfluxDBConfig.BatchSize)
+	if batchSize <= 0 {
+		batchSize = 200
+	}
+	flushInterval := time.Duration(c.InfluxDBConfig.FlushInterval) * time.Second
+	if flushInterval <= 0 {
+		flushInterval = time.Second
+	}
+	// 并发写入限制，默认 4
+	maxConcurrency := 4
+	ctx.Processor = processor.NewProcessor(ctx.Dao, batchSize, flushInterval, maxConcurrency)
+
 	// 如果配置了 MySQL，则尝试建立连接并自动建表
 	if c.MySQL.Host != "" {
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=%s&parseTime=true&loc=Local", c.MySQL.User, c.MySQL.Password, c.MySQL.Host, c.MySQL.Port, c.MySQL.Database, c.MySQL.Charset)
@@ -69,8 +83,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		}
 		ctx.MySQLDB = db
 		ctx.MySQLDao = dao.NewMySQLDao(db)
-		// 初始化 Processor（已移除在 Processor 中维护 ActiveTasks 的设计）
-		ctx.Processor = processor.NewDefaultProcessor(ctx.MySQLDao)
 
 		// 自动建表（低风险的表结构创建，使用 IF NOT EXISTS）
 		if err := autoMigrate(db); err != nil {
@@ -80,186 +92,67 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		}
 	}
 
-	// 启动定时清理协程
-	go func() {
-		for {
-			now := time.Now()
-			ctx.OnlineDrones.Range(func(key, value interface{}) bool {
-				lastTime, ok := value.(time.Time)
-				if ok && now.Sub(lastTime) > time.Minute {
-					ctx.OnlineDrones.Delete(key)
-				}
-				return true
-			})
-			time.Sleep(10 * time.Second)
-		}
-	}()
-
-	// 初始化 VEHState 客户端
+	// 初始化 VEHState WebSocket 客户端（自动在后台运行，非对外暴露）
 	if c.VEHState.URL != "" {
-		apiClient := apiclient.NewVEHStateClient(
-			c.VEHState.URL,
-			c.AppId,
-			c.Key,
-			c.VEHState.HeartbeatTimer,
-			func(resp *types.VehicleStateResp) error {
-				// 处理来自车辆状态API的消息响应
-				// 这里可以进一步对接收到的数据进行处理，例如广播到WebSocket客户端
-				logx.Infof("收到 VEHState 响应: %+v", resp)
-				// 可以在这里根据需要进行数据广播或处理
-				return nil
-			},
-			func(err error) {
-				// 处理错误
-				logx.Errorf("VEHState 错误: %v", err)
-			},
-			func() {
-				// 处理关闭
-				logx.Infof("VEHState 客户端已关闭")
-			},
-		)
-
-		// 建立连接
-		if err := apiClient.Connect(context.Background()); err != nil {
-			logx.Errorf("连接 VEHState 失败: %v", err)
+		if c.AppId == "" || c.Key == "" {
+			logx.Errorf("VEHState 已配置, 但配置文件中缺少AppId/Key")
 		} else {
-			// 启动读写循环
-			apiClient.Run(context.Background())
-
-			// 订阅 VehicleId=I1000103，持续接收该车辆状态推送
-			if err := apiClient.SubscribeVehicle("I1000103"); err != nil {
-				logx.Errorf("订阅 VehicleId=I1000103 失败: %v", err)
-			} else {
-				logx.Infof("已订阅车辆状态 VehicleId=I1000103")
+			// 降频策略：可以通过配置 VEHState.SampleIntervalMs 指定每辆车的最小处理间隔（毫秒），
+			// 如果配置为 0 则表示不降频（逐条处理）。默认降频到 1000ms（1Hz）以避免高频推送（例如 10Hz）导致后端阻塞。
+			minInterval := c.VEHState.SampleIntervalMs
+			if minInterval <= 0 {
+				minInterval = 1000 // 默认1s
 			}
-			ctx.VEHStateClient = apiClient
-			logx.Infof("VEHState 客户端初始化成功")
 
-			// 启动接收消息的 worker 池，避免在 readPump 中做耗时处理导致积压
-			// 说明：服务端以有数据就推送，频率 10Hz，此处使用 worker 池来限制并发处理并提供背压监控。
-			workerNum := runtime.NumCPU() // 可根据需要调整为固定值，例如 4 或 8
-			var processedCount uint64
+			// 包装回调：先根据 vehicleId 检查上次处理时间，低于阈值则跳过（丢弃），否则处理。
+			wrappedHandler := func(data *types.VehicleStateData) error {
+				if data == nil || data.VehicleId == "" {
+					return nil
+				}
+				nowMs := time.Now().UnixNano() / int64(time.Millisecond)
 
-			// 启动 workerNum 个消费者，从 apiClient.Recv 中消费消息并调用 ProcessState
-			for i := 0; i < workerNum; i++ {
-				go func(id int) {
-					logx.Infof("[VEHState worker] 启动 worker %d", id)
-					for {
-						select {
-						case resp, ok := <-apiClient.Recv:
-							if !ok {
-								logx.Infof("[VEHState worker] Recv 通道已关闭，worker %d 退出", id)
-								return
-							}
-							if resp == nil {
-								continue
-							}
-							// 同步处理，ProcessState 内部已异步/持久化逻辑
-							if ctx != nil {
-								if err := ctx.ProcessState(&resp.Data); err != nil {
-									logx.Errorf("[VEHState worker] 处理数据失败 worker=%d vehicle=%s: %v", id, resp.Data.VehicleId, err)
-								}
-							}
-							atomic.AddUint64(&processedCount, 1)
-						case <-apiClient.Done:
-							logx.Infof("[VEHState worker] 收到 Done 信号，worker %d 退出", id)
-							return
+				// 尝试读取上一次处理时间
+				if v, ok := ctx.VehicleLastProcessed.Load(data.VehicleId); ok {
+					if lastMs, ok2 := v.(int64); ok2 {
+						elapsed := nowMs - lastMs
+						if elapsed < int64(minInterval) {
+							// 在阈值内，跳过处理以实现降频；记录日志以便排查高频推送问题
+							// logx.Infof("VEHState %s 跳过（降频），距上次处理 %d ms，小于阈值 %d ms", data.VehicleId, elapsed, minInterval)
+							return nil
 						}
 					}
-				}(i)
+				}
+
+				// 更新为本次处理时间
+				ctx.VehicleLastProcessed.Store(data.VehicleId, nowMs)
+
+				// 这里为实际处理逻辑入口：优先把数据投递到 Processor 队列以异步批量写入 Influx。
+				// 如果 Processor 未初始化则回退到记录日志。
+				if ctx.Processor != nil {
+					if err := ctx.Processor.Enqueue(data); err != nil {
+						logx.Errorf("将 VEHState 数据入队失败，vehicleId=%s err=%v", data.VehicleId, err)
+						return err
+					}
+					// 入队成功，不在此处阻塞写入，返回 nil 表示已处理
+					return nil
+				}
+
+				// 未配置 Processor 时保留原有日志行为
+				logx.Infof("收到 VEHState 数据: %+v", data)
+				return nil
 			}
 
-			// 监控协程：定期打印 Send/Recv 通道长度、已处理计数与 goroutine 数，便于排查背压和性能问题
-			go func() {
-				ticker := time.NewTicker(10 * time.Second)
-				defer ticker.Stop()
-				for range ticker.C {
-					sendLen := len(apiClient.Send)
-					recvLen := len(apiClient.Recv)
-					processed := atomic.LoadUint64(&processedCount)
-					goroutines := runtime.NumGoroutine()
-					logx.Infof("[VEHState 监控] Send 长度=%d Recv 长度=%d 已处理=%d goroutines=%d", sendLen, recvLen, processed, goroutines)
-				}
-			}()
-
-			// 启动自动请求协程：低频保活或按需查询（保留 30s 作为心跳/按需触发，若不需要可删除）
-			// go func(sc *ServiceContext, client *apiclient.VEHStateClient) {
-			// 	// 等待短暂时间以确保连接/订阅稳定
-			// 	time.Sleep(3 * time.Second)
-			// 	ticker := time.NewTicker(30 * time.Second)
-			// 	defer ticker.Stop()
-			// 	for {
-			// 		// 发送一次查询请求（按需或作为保活），尽量保持低频，避免和 10Hz 推送竞争
-			// 		req := &types.VehicleStateReq{VehicleId: "I1000103"}
-			// 		if err := client.SendRequest(req); err != nil {
-			// 			logx.Errorf("[定时请求] VEHState SendRequest error: %v", err)
-			// 		} else {
-			// 			logx.Infof("[定时请求] VEHState 查询请求已发送 (vehicleId=I1000103)")
-			// 		}
-			// 		// 等待下一个周期
-			// 		select {
-			// 		case <-ticker.C:
-			// 			continue
-			// 		case <-client.Done:
-			// 			logx.Infof("[定时请求] 收到 client.Done，定时请求协程退出")
-			// 			return
-			// 		}
-			// 	}
-			// }(ctx, apiClient)
+			scClient := apiclient.NewVEHStateClient(c.VEHState, c.AppId, c.Key, wrappedHandler)
+			ctx.VEHStateClient = scClient
+			// 在后台启动连接
+			go scClient.Start(context.Background())
+			// logx.Infof("VEHState 客户端已启动，URL=%s, 降频阈值=%dms", c.VEHState.URL, minInterval)
 		}
 	} else {
-		logx.Errorf("VEHState URL not configured")
+		logx.Infof("未配置 VEHState URL，跳过 VEHState 客户端初始化")
 	}
-
-	// // 初始化车辆信息API客户端
-	// if c.VEHInfo.URL != "" {
-	// 	ctx.VEHInfoClient = apiclient.NewVEHInfoClient(c.VEHInfo.URL, c.AppId, c.Key)
-	// 	logx.Infof("VEHInfo 客户端已通过以下URL初始化: %s", c.VEHInfo.URL)
-
-	// 	// 启动定时同步任务：每6小时同步一次车辆信息
-	// 	go ctx.startVehicleSyncTask()
-	// } else {
-	// 	logx.Errorf("VEHInfo URL 未配置")
-	// }
 
 	return ctx
-}
-
-// startVehicleSyncTask 启动车辆同步定时任务，每6小时执行一次
-func (sc *ServiceContext) startVehicleSyncTask() {
-	ticker := time.NewTicker(6 * time.Hour)
-	defer ticker.Stop()
-
-	sc.executeVehicleSync()
-
-	// 定时执行
-	for range ticker.C {
-		sc.executeVehicleSync()
-	}
-}
-
-// executeVehicleSync 执行一次车辆同步操作
-func (sc *ServiceContext) executeVehicleSync() {
-	// 依赖检查
-	if sc.VEHInfoClient == nil {
-		return
-	}
-	if sc.MySQLDao == nil {
-		return
-	}
-	// 调用逻辑层执行同步
-	syncCtx := context.Background()
-	vehicles, err := sc.VEHInfoClient.GetAllVehicles(nil)
-	if err != nil {
-		return
-	}
-
-	for _, vehicle := range vehicles {
-		if err := sc.MySQLDao.InsertOrUpdateVehicleFromAPI(&vehicle); err != nil {
-		}
-	}
-
-	_ = syncCtx // 保留参数以供未来扩展
 }
 
 // autoMigrate 创建必要的 MySQL 表（使用 IF NOT EXISTS，安全可重入）
@@ -369,32 +262,29 @@ func createVehicleListTable(db *sql.DB) error {
 	return err
 }
 
-// ProcessVehicleState 处理来自WebSocket API的车辆状态数据
-// 通过Processor持久化到数据库，并广播到WebSocket客户端
-func (sc *ServiceContext) ProcessVehicleState(data *types.VehicleStateData) error {
-	if sc == nil || data == nil {
-		return nil
+// Close 关闭 ServiceContext 中的外部资源（优雅停止）
+func (sc *ServiceContext) Close() {
+	// 停止 VEHState 客户端
+	if sc.VEHStateClient != nil {
+		sc.VEHStateClient.Stop()
+		logx.Infof("VEHState 客户端已停止")
 	}
 
-	// 统一委托给 Processor 进行持久化、Influx 写入与广播（集中管理，便于测试与维护）
+	// 停止 Processor 并等待其写入完成
 	if sc.Processor != nil {
-		if err := sc.Processor.ProcessAndPublish(data, sc.Dao, sc.WSHub, sc.MySQLDB); err != nil {
-			logx.Errorf("Processor 处理并发布状态失败 vehicle=%s: %v", data.VehicleId, err)
-			return err
-		}
+		sc.Processor.Close()
+		logx.Infof("Processor 已停止")
 	}
-	return nil
-}
 
-// ProcessState 将 VehicleStateData 写入 Influx，并通过 WebSocket 广播最新状态
-// 该方法用于直接处理新 API 推送的 VehicleStateData
-func (sc *ServiceContext) ProcessState(req *types.VehicleStateData) error {
-	// 统一委托给 Processor 进行持久化、Influx 写入与广播
-	if sc.Processor != nil {
-		if err := sc.Processor.ProcessAndPublish(req, sc.Dao, sc.WSHub, sc.MySQLDB); err != nil {
-			logx.Errorf("Processor 处理并发布状态失败 vehicle=%s: %v", req.VehicleId, err)
-			return err
-		}
+	// 关闭 Influx Dao（Flush 并关闭客户端）
+	if sc.Dao != nil {
+		sc.Dao.Close()
+		logx.Infof("Influx Dao 已关闭")
 	}
-	return nil
+
+	// 关闭 MySQL 连接
+	if sc.MySQLDB != nil {
+		_ = sc.MySQLDB.Close()
+		logx.Infof("MySQL 数据库连接已关闭")
+	}
 }

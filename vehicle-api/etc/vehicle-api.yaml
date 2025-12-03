@@ -30,6 +30,7 @@ Key: "AK-9MBjPmJiUll0Y0vy5tY3caDHxXUDNeuuWtUi"
 VEHState:
   url: "ws://119.84.241.37:34037/infraCloud/openapi/regionCloud/open-api/v1/ws/can"  # 外部车辆状态API的WebSocket URL
   heartbeatTimer: 5  # 心跳间隔（秒），0表示不启用
+  sampleIntervalMs: 1000
 
 VEHInfo:
   url: "http://119.84.241.37:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/getAllList"  # 车辆信息列表API URL

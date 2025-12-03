@@ -67,7 +67,6 @@ type UpdateVehicleReq struct {
 	Extra         *string `json:"extra,optional"`
 }
 
-
 type VehicleDetailResp struct {
 	Vehicle VehicleInfo       `json:"vehicle"`
 	Extra   map[string]string `json:"extra,omitempty"`

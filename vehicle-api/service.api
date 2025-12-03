@@ -21,8 +21,6 @@ type Position2D {
 	Latitude  uint32 `json:"latitude"` // 纬度: 与 Position.Latitude 相同的表示，单位 1e-7°，数据偏移量 90，0xFFFFFFFF 表示异常或缺省
 }
 
- 
-
 type VehicleStateData {
 	CategoryCode    int     `json:"categoryCode"` // 车辆类型编码
 	VehicleId       string  `json:"vehicleId"` // 车编号
@@ -165,9 +163,6 @@ type VehicleDetailResp {
 service vehicle-api {
 	@handler HandleWebSocket
 	get /api/vehicle/ws
-
-	@handler HandleVehicleState
-	get /api/vehicle/state (VehicleStateReq) returns (VehicleStateResp)
 
 	@handler HandleOnlineCount
 	get /api/vehicle/online_count returns (OnlineCountResp)
