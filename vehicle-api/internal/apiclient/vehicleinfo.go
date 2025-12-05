@@ -2,7 +2,8 @@ package apiclient
 
 import (
 	"bytes"
-	"crypto/rand"
+	"context"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,141 +11,92 @@ import (
 	"io"
 	"net/http"
 	"time"
-	"vehicle-api/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
+
+	"vehicle-api/internal/config"
 )
 
-// VEHInfoClient 用于调用外部车辆信息列表API
+// VEHInfoClient 用于定期从外部 HTTP API 拉取全部车辆信息列表
 type VEHInfoClient struct {
-	apiURL    string
-	client    *http.Client
+	cfg       config.HttpConfig
 	appId     string
 	appSecret string
+	client    *http.Client
 }
 
-// NewVEHInfoClient 创建车辆API客户端
-// NewVEHInfoClient 创建车辆API客户端，传入 apiURL, appId, appSecret
-func NewVEHInfoClient(apiURL, appId, appSecret string) *VEHInfoClient {
+// NewVEHInfoClient 创建 VEHInfoClient
+func NewVEHInfoClient(cfg config.HttpConfig, appId, appSecret string) *VEHInfoClient {
 	return &VEHInfoClient{
-		apiURL:    apiURL,
-		client:    &http.Client{},
+		cfg:       cfg,
 		appId:     appId,
 		appSecret: appSecret,
+		client:    &http.Client{Timeout: 20 * time.Second},
 	}
 }
 
-// GetAllVehicles 从外部API获取所有车辆信息（或按categoryCode筛选）
-// 返回VehicleInfo列表
-func (c *VEHInfoClient) GetAllVehicles(categoryCode *int) ([]types.VehicleInfo, error) {
-	if c.apiURL == "" {
-		return nil, fmt.Errorf("vehicle API URL not configured")
+// FetchAll 发起一次请求获取全部车辆信息列表，返回原始响应体字节（调用方负责日志/处理）
+func (c *VEHInfoClient) FetchAll(ctx context.Context) ([]byte, error) {
+	if c.cfg.URL == "" {
+		return nil, fmt.Errorf("VEHInfo API 地址未配置")
 	}
 
-	logx.Infof("开始获取车辆列表: apiURL=%s categoryCode=%v", c.apiURL, categoryCode)
+	// 外部协议说明：POST 请求，body 可包含 categoryCode（Integer），不传表示返回全部车辆
+	payload := map[string]interface{}{}
+	bodyBytes, _ := json.Marshal(payload)
 
-	// 构建请求体
-	reqBody := map[string]interface{}{}
-	if categoryCode != nil {
-		reqBody["categoryCode"] = *categoryCode
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.URL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		logx.Errorf("VEHInfoClient: 请求体序列化失败: %v", err)
+		logx.Errorf("创建 VEHInfo 请求失败: %v", err)
 		return nil, err
 	}
-
-	// 发送POST请求
-	req, err := http.NewRequest("POST", c.apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		logx.Errorf("VEHInfoClient: 创建HTTP请求失败: %v", err)
-		return nil, err
-	}
-
 	req.Header.Set("Content-Type", "application/json")
-	// 如果配置了 appId 和 appSecret，则按约定生成 timestamp、nonce 和 sign 放入 Header
+
+	// 如果配置了 AppId/Key，则按同 Trajectory 的约定生成鉴权头
 	if c.appId != "" && c.appSecret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().Unix())
 		nonceBytes := make([]byte, 12)
-		if _, err := rand.Read(nonceBytes); err != nil {
-			// fallback to timestamp-based nonce
-			nonceBytes = []byte(timestamp)
+		if _, err := crand.Read(nonceBytes); err != nil {
+			// fallback
+			copy(nonceBytes, []byte(timestamp))
 		}
 		nonce := hex.EncodeToString(nonceBytes)
 
-		// data.toString 使用请求体的 JSON 字符串（与发送体保持一致）
-		dataStr := string(jsonData)
-		// 计算签名: SHA-256(dataStr + timestamp + appId + nonce + appSecret)
-		signInput := dataStr + timestamp + c.appId + nonce + c.appSecret
+		signInput := string(bodyBytes) + timestamp + c.appId + nonce + c.appSecret
 		h := sha256.New()
 		h.Write([]byte(signInput))
 		sign := hex.EncodeToString(h.Sum(nil))
 
-		// 设置鉴权相关请求头（使用小写或按约定）
 		req.Header.Set("appid", c.appId)
 		req.Header.Set("timestamp", timestamp)
 		req.Header.Set("nonce", nonce)
 		req.Header.Set("sign", sign)
 	}
-	logx.Debugf("VEHInfoClient: 发送 POST 到 %s, headers=%v", c.apiURL, req.Header)
 
+	logx.Infof("调用外部 VEHInfo API: url=%s", c.cfg.URL)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		logx.Errorf("VEHInfoClient: 调用API连接失败: %v", err)
-		return nil, fmt.Errorf("API连接失败: %v", err)
+		logx.Errorf("调用外部 VEHInfo API 失败: %v", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		logx.Errorf("VEHInfoClient: 车辆API返回非200状态 %d: %s", resp.StatusCode, string(bodyBytes))
-		return nil, fmt.Errorf("vehicle API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		logx.Errorf("外部 VEHInfo API 返回非200: status=%d body=%s", resp.StatusCode, string(b))
+		return nil, fmt.Errorf("external VEHInfo API returned status %d", resp.StatusCode)
 	}
 
-	// 解析响应
-	respBody := map[string]interface{}{}
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&respBody); err != nil {
-		logx.Errorf("VEHInfoClient: 解析响应体失败: %v", err)
-		return nil, err
-	}
-
-	// 检查错误码
-	code, ok := respBody["code"].(float64)
-	if !ok || code != 0 {
-		logx.Errorf("VEHInfoClient: 车辆API返回错误码=%v, keys=%v, full_resp=%+v", respBody["code"], getKeys(respBody), respBody)
-		return nil, fmt.Errorf("vehicle API returned error code: %v", respBody["code"])
-	}
-
-	// 解析data字段（应该是[]VehicleInfo的JSON数组）
-	dataRaw, ok := respBody["data"]
-	if !ok {
-		return nil, fmt.Errorf("no data field in response")
-	}
-
-	// 将data转换为JSON并反序列化
-	dataBytes, err := json.Marshal(dataRaw)
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 读取上限 1MB
 	if err != nil {
-		logx.Errorf("VEHInfoClient: 将 data 字段转为 JSON 失败: %v", err)
+		logx.Errorf("读取 VEHInfo 响应体失败: %v", err)
 		return nil, err
 	}
 
-	var vehicles []types.VehicleInfo
-	if err := json.Unmarshal(dataBytes, &vehicles); err != nil {
-		logx.Errorf("VEHInfoClient: 反序列化车辆列表失败: %v, data=%s", err, string(dataBytes))
-		return nil, err
-	}
-
-	logx.Infof("获取车辆列表成功: 共接收 %d 辆车辆", len(vehicles))
-	return vehicles, nil
+	return b, nil
 }
 
-// getKeys 获取map的所有键用于日志诊断
-func getKeys(m map[string]interface{}) []string {
-	var keys []string
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
+// FetchAll 简化版的无 ctx 调用（向后兼容）
+func (c *VEHInfoClient) FetchAllNoCtx() ([]byte, error) {
+	return c.FetchAll(context.Background())
 }

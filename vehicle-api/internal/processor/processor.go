@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 
 	"vehicle-api/internal/dao"
 	"vehicle-api/internal/types"
+	"vehicle-api/internal/websocket"
 )
 
 // Processor 负责接收车辆状态数据并异步批量写入 Influx（并为将来扩展到 MySQL 留出位置）
@@ -22,6 +24,8 @@ type Processor struct {
 	cancel        context.CancelFunc
 	// 限制同时并发写入的 goroutine 数，避免在高并发场景下过多并发
 	writeSem chan struct{}
+	// 用于向前端广播实时位置信息
+	Hub *websocket.Hub
 }
 
 // NewProcessor 创建并启动后台批处理 goroutine
@@ -29,7 +33,7 @@ type Processor struct {
 // batchSize: 单批次触发阈值（建议 50-500 之间，视流量与点大小而定）
 // flushInterval: 定时刷新间隔（例如 1s）
 // maxConcurrency: 并发写入限制
-func NewProcessor(d *dao.InfluxDao, batchSize int, flushInterval time.Duration, maxConcurrency int) *Processor {
+func NewProcessor(d *dao.InfluxDao, batchSize int, flushInterval time.Duration, maxConcurrency int, hub *websocket.Hub) *Processor {
 	if batchSize <= 0 {
 		batchSize = 200
 	}
@@ -49,6 +53,7 @@ func NewProcessor(d *dao.InfluxDao, batchSize int, flushInterval time.Duration, 
 		ctx:           ctx,
 		cancel:        cancel,
 		writeSem:      make(chan struct{}, maxConcurrency),
+		Hub:           hub,
 	}
 
 	p.wg.Add(1)
@@ -64,6 +69,43 @@ func (p *Processor) Enqueue(data *types.VehicleStateData) error {
 	}
 	select {
 	case p.inCh <- data:
+		// 入队成功后，尽量提供更实时的单条广播给前端（包含更多详情字段），
+		// 以减少批量 flush 带来的延迟。广播采取非阻塞策略：若立即无法发送，
+		// 则在后台以短超时再尝试一次，避免阻塞业务路径或占用过多资源。
+		if p != nil && p.Hub != nil {
+			// 构建前端需要的实时详情数据（只包含常用字段，字段名与前端约定）
+			payload := map[string]interface{}{
+				"vehicleId":    data.VehicleId,
+				"lon":          data.Lon,
+				"lat":          data.Lat,
+				"timestamp":    data.Timestamp,
+				"speed":        data.Speed,
+				"heading":      data.Heading,
+				"categoryCode": data.CategoryCode,
+				// 常用扩展字段，前端可选展示：SOC（电量）、里程、驾驶模式等
+				"soc":       data.Soc,
+				"mileage":   data.Mileage,
+				"driveMode": data.DriveMode,
+			}
+
+			if b, err := json.Marshal(payload); err == nil {
+				select {
+				case p.Hub.Broadcast <- b:
+					// 发送成功
+				default:
+					// 后台重试一次，短超时后放弃，防止阻塞
+					go func(msg []byte) {
+						select {
+						case p.Hub.Broadcast <- msg:
+							return
+						case <-time.After(200 * time.Millisecond):
+							logx.Errorf("即时 Hub 广播超时，丢弃 vehicleId=%s", data.VehicleId)
+							return
+						}
+					}(b)
+				}
+			}
+		}
 		return nil
 	case <-time.After(200 * time.Millisecond):
 		// 在极端高压场景下可能会触发，返回错误由调用方决定是否重试
@@ -97,6 +139,11 @@ func (p *Processor) runBatcher() {
 		toWrite := make([]*types.VehicleStateData, len(batch))
 		copy(toWrite, batch)
 		batch = batch[:0]
+
+		// 先向 Hub 广播实时位置信息（尽量快速完成，若 Hub 未配置则跳过）
+		if err := p.process2hub(toWrite); err != nil {
+			logx.Errorf("向 Hub 广播失败: %v", err)
+		}
 
 		// 限制并发写入数量
 		p.writeSem <- struct{}{}
@@ -160,5 +207,54 @@ func (p *Processor) process2influx(batch []*types.VehicleStateData) error {
 // process2mysql 占位：保留将来实现 MySQL 持久化的接口与注释
 func (p *Processor) process2mysql(batch []*types.VehicleStateData) error {
 	// TODO: 将来实现：把批量数据持久化到 MySQL，可考虑使用插入/更新批处理并保证重复去重/幂等
+	return nil
+}
+
+func (p *Processor) process2hub(batch []*types.VehicleStateData) error {
+	if p == nil || p.Hub == nil || len(batch) == 0 {
+		return nil
+	}
+
+	// 构建简化的数组，只保留前端展示所需字段，减少带宽与客户端解析负担
+	payload := make([]map[string]interface{}, 0, len(batch))
+	for _, s := range batch {
+		if s == nil {
+			continue
+		}
+		m := map[string]interface{}{
+			"vehicleId": s.VehicleId,
+			"lon":       s.Lon,
+			"lat":       s.Lat,
+			"timestamp": s.Timestamp,
+			"speed":     s.Speed,
+			"heading":   s.Heading,
+		}
+		payload = append(payload, m)
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	// 尝试非阻塞发送到 Hub，若阻塞则在后台以短超时重试一次，避免阻塞批处理主流程
+	select {
+	case p.Hub.Broadcast <- b:
+		return nil
+	default:
+		// 背景发送，若在短时间内仍发送失败则放弃并记录
+		go func(data []byte) {
+			select {
+			case p.Hub.Broadcast <- data:
+				return
+			case <-time.After(200 * time.Millisecond):
+				logx.Errorf("Hub 广播超时，丢弃一批数据 (size=%d)", len(payload))
+				return
+			}
+		}(b)
+	}
 	return nil
 }

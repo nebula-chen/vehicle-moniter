@@ -380,6 +380,38 @@
         // amap.addControl(new AMap.Scale());
         // amap.addControl(new AMap.ToolBar());
 
+        codeNameMap = {
+            0:  "其他",
+            1:  "乘用车",
+            2:  "商用车",
+            3:  "公交车",
+            4:  "低速无人车",
+            5:  "公务车辆",
+            6:  "无人清扫车",
+            7:  "渣土车",
+            9:  "通勤车",
+            10: "自动驾驶无人清扫车",
+            11: "自动驾驶无人配送车",
+            12: "自动驾驶无人售卖车",
+            13: "多功能无人安防巡逻车",
+            14: "自动驾驶接驳车",
+            15: "自动驾驶环卫车",
+            16: "社会车辆",
+            17: "救火车",
+            18: "救护车",
+            19: "警车",
+            20: "存量车-测试车",
+            21: "引入车-有人",
+            22: "存量车-渣土车",
+            23: "存量车-私家车",
+            24: "存量车-公交车",
+            25: "仿真车",
+            26: "存量车-特殊车",
+            27: "存量车-通勤车",
+            98: "公交车",
+            99: "渣土车",
+        }
+
         // 添加车辆标记（使用 VEHICLE_ICON 图片）
         const infos = getVehiclesMap() || {};
         Object.values(infos).forEach(info => {
@@ -390,8 +422,10 @@
                 img.style.width = '32px';
                 img.style.height = '32px';
                 img.style.display = 'block';
-                // rotate via CSS transform; AMap 的 icon rotation 支持有限，使用 CSS 最简单
-                img.style.transform = `rotate(${+(info.heading||0)}deg)`;
+        		categoryName = codeNameMap[info.CategoryCode]
+        		if (categoryName === "") {
+        			categoryName = "其他"
+        		}
 
                 const marker = new AMap.Marker({
                     position: [info.lng, info.lat],
@@ -407,7 +441,7 @@
                         if (typeof window.updateVehiclePanel === 'function') {
                             window.updateVehiclePanel({
                                 vehicleId: info.id,
-                                vehicleType: info.type || info.vehicleType || '',
+                                vehicleType: categoryName || '',
                                 vehicleCapacity: info.capacity || info.loadCapacity || '',
                                 vehicleBattery: info.battery || info.batteryLevel || '',
                                 vehicleSpeed: info.speed || '',
@@ -932,22 +966,6 @@
                     // 根据状态更新图标样式
                     if (extra && extra.status) {
                         var img = marker.getContent();
-                        if (img && img.style) {
-                            // 根据状态设置不同的滤镜效果
-                            switch(extra.status.toLowerCase()) {
-                                case '空闲':
-                                    img.style.filter = 'hue-rotate(120deg)'; // 绿色
-                                    break;
-                                case '异常':
-                                    img.style.filter = 'hue-rotate(0deg)'; // 红色
-                                    break;
-                                case '充电中':
-                                    img.style.filter = 'hue-rotate(180deg)'; // 蓝色
-                                    break;
-                                default:
-                                    img.style.filter = ''; // 默认颜色
-                            }
-                        }
                     }
                 } catch(e){}
                 return;
@@ -1065,83 +1083,60 @@
             wsConn.onmessage = function(ev){
                 try {
                     var data = JSON.parse(ev.data);
-                    // 期望字段可能为多种命名：vehicleId / vehicleid / id，但必须有一个
-                    var vid = data.vehicleId ?? data.vehicleid ?? data.id ?? null;
-                    if (!vid) return;
+                    // 后端可能推送单条对象，也可能推送一个批量数组（我们的 Processor 现在会广播数组）
+                    var items = Array.isArray(data) ? data : [data];
+                    // 逐条处理每一条数据，保持向后兼容
+                    items.forEach(function(item){
+                        try {
+                            // 支持多种命名：vehicleId / vehicleid / id
+                            var vid = item.vehicleId ?? item.vehicleid ?? item.id ?? null;
+                            if (!vid) return;
 
-                    // 支持多种经纬字段命名：lon / longitude / lng，如未上报则显示 '--'
-                    var lon = data.lon ?? data.longitude ?? data.lng ?? null;
-                    var lat = data.lat ?? data.latitude ?? data.lat ?? null;
+                            // 支持多种经纬字段命名：lon / longitude / lng
+                            var lon = item.lon ?? item.longitude ?? item.lng ?? null;
+                            var lat = item.lat ?? item.latitude ?? item.lat ?? null;
 
-                    // 仅在经纬度有效时创建或移动 marker，同时更新面板信息
-                    if (lon !== null && lat !== null) {
-                        // 从 WebSocket 数据中提取并转换车辆类型
-                        var typeText = '普通';  // 默认类型
-                        if (data.type === 2) typeText = '冷链';
-                        else if (data.type === 3) typeText = '大件';
+                            // 仅在经纬度有效时创建或移动 marker，同时更新面板信息
+                            if (lon !== null && lat !== null) {
+                                // 转换车辆类型文本（优先使用 categoryCode，兼容多种命名）：
+                                // 后端现在会推送 categoryCode，优先使用它；若不存在再退回到旧的 type 字段。
+                                if (typeof item.categoryCode !== 'undefined' || typeof item.CategoryCode !== 'undefined') {
+                                    var typeCode = item.categoryCode ?? item.CategoryCode;
+                                } else var typeCode = 0;
+                                var typeText = codeNameMap[typeCode];
 
-                        // 确定车辆状态（根据 status 字段和其他信息）
-                        var status = data.status;
-                        if (!status) {
-                            // 如果后端未直接提供状态，尝试根据其他信息推断
-                            if (data.battery < 20) status = '充电中';
-                            else if (data.velocityGNSS > 0 || data.velocity > 0) status = '在途';
-                            else status = '空闲';
-                        }
+                                // 确定车辆状态（若上报则使用，上报缺失时根据速度/电量做简单推断）
+                                var status = item.status;
+                                if (!status) {
+                                    if (typeof item.battery !== 'undefined' && Number(item.battery) < 20) status = '充电中';
+                                    else if ((item.velocityGNSS && Number(item.velocityGNSS) > 0) || (item.velocity && Number(item.velocity) > 0)) status = '在途';
+                                    else status = '空闲';
+                                }
 
-                        // 更新车辆面板信息
-                        updateVehiclePanel({
-                            vehicleId: vid,
-                            plateNumber: data.plateNumber ?? '--',  // 车牌号
-                            vehicleType: typeText,  // 已转换的车辆类型文本
-                            vehicleCapacity: (data.capacity ? data.capacity + '立方' : '--'),  // 容量
-                            vehicleBattery: (data.battery ? data.battery + '%' : '--'),  // 电量
-                            vehicleSpeed: ((data.velocityGNSS || data.velocity || 0) + 'km/h'),  // 速度
-                            vehicleRoute: data.routeId ?? '--',  // 路线
-                            vehicleEta: data.eta ?? '--',  // 预计到达时间
-                            status: status  // 状态
-                        });
+                                // 更新车辆面板信息（仅传需要的字段）
+                                updateVehiclePanel({
+                                    vehicleId: vid,
+                                    plateNumber: item.plateNumber ?? '--',
+                                    vehicleType: typeText,
+                                    vehicleCapacity: (item.capacity ? item.capacity + '立方' : '--'),
+                                    vehicleBattery: (typeof item.battery !== 'undefined') ? ('' + item.battery + '%') : '--',
+                                    vehicleSpeed: ((item.velocityGNSS || item.velocity || 0) + 'km/h'),
+                                    vehicleRoute: item.routeId ?? '--',
+                                    vehicleEta: item.eta ?? '--',
+                                    status: status
+                                });
 
-                        // 更新地图上的车辆标记
-                        createOrUpdateMarker(vid, lon, lat, {
-                            heading: data.heading,
-                            velocity: data.velocityGNSS || data.velocity,
-                            plateNumber: data.plateNumber,  // 添加车牌号到标记信息中
-                            type: typeText,  // 添加车辆类型到标记信息中
-                            status: data.status  // 添加状态信息
-                        });
-                    }
-
-                    // 解析速度并格式化为 km/h（VEH2CLOUD_STATE 中 velocity 单位为 0.01 m/s）
-                    var speedVal = data.velocity ?? data.velocityGNSS ?? null;
-                    var speedStr = '--';
-                    if (speedVal !== null && !isNaN(Number(speedVal))) {
-                        // 把 0.01 m/s -> km/h: value * 0.01 (m/s) * 3.6 = value * 0.036
-                        try { speedStr = Math.round(Number(speedVal) * 0.036) + ' km/h'; } catch(e){ speedStr = '--' }
-                    }
-
-                    // 目的地展示：若存在 destLon/destLat，在面板显示一个简短说明
-                    var routeStr = '--';
-                    if (typeof data.destLon !== 'undefined' && typeof data.destLat !== 'undefined') {
-                        var dlon = normalizeCoord(data.destLon);
-                        var dlat = normalizeCoord(data.destLat);
-                        if (dlon && dlat) routeStr = '目的地: ' + dlon.toFixed(6) + ', ' + dlat.toFixed(6);
-                    } else if (Array.isArray(data.passPoints) && data.passPoints.length > 0) {
-                        routeStr = '途经点: ' + data.passPoints.length + ' 个';
-                    }
-
-                    // 更新右侧车辆信息面板（只传递需要更新的字段，避免覆盖面板的其他统计）
-                    try {
-                        if (typeof window.updateVehiclePanel === 'function') {
-                            var panelPayload = { vehicleId: vid };
-                            if (speedStr) panelPayload.vehicleSpeed = speedStr;
-                            if (routeStr) panelPayload.vehicleRoute = routeStr;
-                            // 若上报了电量字段（某些设备会附带 battery），则同步
-                            if (typeof data.battery !== 'undefined') panelPayload.vehicleBattery = ('' + data.battery) + '%';
-                            // 其余可能有用的字段可在 future 扩展
-                            window.updateVehiclePanel(panelPayload);
-                        }
-                    } catch(e){ console.warn('updateVehiclePanel failed', e); }
+                                // 更新地图上的车辆标记，确保把 heading/velocity 等字段传入
+                                createOrUpdateMarker(vid, lon, lat, {
+                                    heading: item.heading,
+                                    velocity: item.velocityGNSS || item.velocity,
+                                    plateNumber: item.plateNumber,
+                                    type: typeText,
+                                    status: status
+                                });
+                            }
+                        } catch(errItem){ console.warn('process ws item failed', errItem, item); }
+                    });
                 } catch(e){
                     console.warn('ws message parse error', e, ev.data);
                 }

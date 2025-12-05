@@ -3,6 +3,7 @@ package svc
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -30,6 +31,8 @@ type ServiceContext struct {
 	OnlineDrones   sync.Map // key: uasID, value: time.Time
 	// VehicleLastProcessed: 跟踪每辆车上一次被处理的时间戳（毫秒），用于实现接收端的降频/采样，避免高频数据导致处理阻塞。
 	VehicleLastProcessed sync.Map // key: vehicleId string, value: int64 (unix ms)
+	// vehInfoStop 用于停止定时拉取车辆信息的后台协程
+	vehInfoStop chan struct{}
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -64,7 +67,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 	// 并发写入限制，默认 4
 	maxConcurrency := 4
-	ctx.Processor = processor.NewProcessor(ctx.Dao, batchSize, flushInterval, maxConcurrency)
+	ctx.Processor = processor.NewProcessor(ctx.Dao, batchSize, flushInterval, maxConcurrency, hub)
 
 	// 如果配置了 MySQL，则尝试建立连接并自动建表
 	if c.MySQL.Host != "" {
@@ -138,7 +141,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 				}
 
 				// 未配置 Processor 时保留原有日志行为
-				logx.Infof("收到 VEHState 数据: %+v", data)
+				// logx.Infof("收到 VEHState 数据: %+v", data)
 				return nil
 			}
 
@@ -150,6 +153,76 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		}
 	} else {
 		logx.Infof("未配置 VEHState URL，跳过 VEHState 客户端初始化")
+	}
+
+	// 初始化 VEHInfo HTTP 客户端并启动定时拉取（每 6 小时一次，启动时立即拉取一次）
+	if c.VEHInfo.URL != "" {
+		viClient := apiclient.NewVEHInfoClient(c.VEHInfo, c.AppId, c.Key)
+		ctx.VEHInfoClient = viClient
+		ctx.vehInfoStop = make(chan struct{})
+		// 后台协程：立即拉取一次，然后每 6 小时拉取一次
+		go func() {
+			ticker := time.NewTicker(6 * time.Hour)
+			// ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			fetchOnce := func() {
+				logx.Infof("开始拉取车辆信息列表 (外部 API)：%s", c.VEHInfo.URL)
+				b, err := viClient.FetchAll(context.Background())
+				if err != nil {
+					logx.Errorf("拉取车辆信息失败: %v", err)
+					return
+				}
+				// 解析响应并尝试持久化到 MySQL（如果已配置）
+				// 响应使用项目中定义的类型 types.VehicleInfoResp
+				var resp types.VehicleInfoResp
+				if err := json.Unmarshal(b, &resp); err != nil {
+					// 无法解析为预期结构，记录原始响应并返回
+					if len(b) <= 4096 {
+						logx.Errorf("解析车辆信息响应失败: %v, raw=%s", err, string(b))
+					} else {
+						logx.Errorf("解析车辆信息响应失败: %v, raw(first4KB)=%s", err, string(b[:4096]))
+					}
+					return
+				}
+
+				// // 打印响应摘要到日志（前4KB）
+				// if len(b) <= 4096 {
+				// 	logx.Infof("车辆信息响应 (%d bytes): %s", len(b), string(b))
+				// } else {
+				// 	logx.Infof("车辆信息响应长度=%d bytes, 前4KB: %s", len(b), string(b[:4096]))
+				// }
+
+				// 如果 MySQL 已配置且 dao 可用，则将每条车辆信息插入或更新到 vehicle_list 表
+				if ctx.MySQLDao != nil {
+					for _, v := range resp.Data {
+						// InsertOrUpdateVehicleFromAPI 会根据 vehicleId 判断插入或更新
+						if err := ctx.MySQLDao.InsertOrUpdateVehicleFromAPI(&v); err != nil {
+							logx.Errorf("持久化车辆信息到 MySQL 失败，vehicleId=%s err=%v", v.VehicleId, err)
+						} else {
+							logx.Infof("已持久化车辆信息到 MySQL，vehicleId=%s", v.VehicleId)
+						}
+					}
+				} else {
+					logx.Infof("MySQL 未配置，跳过持久化车辆信息，返回数据数量=%d", len(resp.Data))
+				}
+			}
+
+			// 启动时立即拉取一次
+			fetchOnce()
+
+			for {
+				select {
+				case <-ctx.vehInfoStop:
+					logx.Infof("车辆信息定时拉取后台协程已停止")
+					return
+				case <-ticker.C:
+					fetchOnce()
+				}
+			}
+		}()
+	} else {
+		logx.Infof("未配置 VEHInfo URL，跳过车辆信息客户端初始化")
 	}
 
 	return ctx
@@ -286,5 +359,11 @@ func (sc *ServiceContext) Close() {
 	if sc.MySQLDB != nil {
 		_ = sc.MySQLDB.Close()
 		logx.Infof("MySQL 数据库连接已关闭")
+	}
+
+	// 停止 VEHInfo 定时拉取后台协程
+	if sc.vehInfoStop != nil {
+		close(sc.vehInfoStop)
+		logx.Infof("车辆信息定时拉取已停止")
 	}
 }

@@ -21,8 +21,8 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			},
 			{
 				Method:  http.MethodGet,
-				Path:    "/api/vehicle/online_count",
-				Handler: HandleOnlineCountHandler(serverCtx),
+				Path:    "/api/vehicle/online",
+				Handler: VehicleOnlineHandler(serverCtx),
 			},
 			{
 				Method:  http.MethodGet,

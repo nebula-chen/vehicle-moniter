@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,6 +27,8 @@ type VEHStateClient struct {
 	appSecret string
 	handle    func(*types.VehicleStateData) error
 
+	// mu 用于保护 conn 的并发访问
+	mu     sync.Mutex
 	conn   *websocket.Conn
 	closed chan struct{}
 }
@@ -43,8 +46,11 @@ func NewVEHStateClient(cfg config.VEHStateConfig, appId, appSecret string, handl
 
 // Start 启动客户端并在后台保持连接；在 ctx 取消或 Stop 被调用时返回
 func (c *VEHStateClient) Start(ctx context.Context) {
-	// 简单重连策略：失败后等待一段时间再重连，直到 ctx 取消
-	backoff := time.Second * 2
+	// 更健壮的重连逻辑：Dial 与读取在不同的 goroutine 中运行，
+	// 并且 Dial 使用带超时的 Context 避免被长时间阻塞，从而保证当其它任务占用资源时仍能进行重连。
+	backoff := 2 * time.Second
+	maxBackoff := 30 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -54,12 +60,17 @@ func (c *VEHStateClient) Start(ctx context.Context) {
 		default:
 		}
 
-		if err := c.connectAndServe(ctx); err != nil {
+		// 使用短超时的 context 来拨号，避免 Dial 被长期阻塞
+		dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := c.dialAndServe(dialCtx)
+		cancel()
+
+		if err != nil {
+			// 记录错误并按照指数退避重试
 			logx.Errorf("VEHState 客户端错误：%v，%s 后重连", err, backoff)
 			select {
 			case <-time.After(backoff):
-				// 增长退避，但限制最大值
-				if backoff < 30*time.Second {
+				if backoff < maxBackoff {
 					backoff *= 2
 				}
 				continue
@@ -67,33 +78,17 @@ func (c *VEHStateClient) Start(ctx context.Context) {
 				c.closeConn()
 				return
 			}
-		} else {
-			// 正常断开（例如主动关闭），退出循环
-			c.closeConn()
-			return
 		}
+
+		// dialAndServe 正常返回（通常表示主动关闭），直接退出
+		c.closeConn()
+		return
 	}
 }
 
-// Stop 主动关闭客户端
-func (c *VEHStateClient) Stop() {
-	c.closeConn()
-}
-
-func (c *VEHStateClient) closeConn() {
-	if c.conn != nil {
-		_ = c.conn.Close()
-		c.conn = nil
-	}
-	select {
-	case <-c.closed:
-		// already closed
-	default:
-		close(c.closed)
-	}
-}
-
-func (c *VEHStateClient) connectAndServe(ctx context.Context) error {
+// dialAndServe 封装了拨号和读循环：拨号成功后在独立的读取 goroutine 中循环读取消息，
+// 若读取出错则返回错误以触发重连。此函数假定传入的 ctx 是用于拨号的短超时 ctx。
+func (c *VEHStateClient) dialAndServe(ctx context.Context) error {
 	if c.cfg.URL == "" {
 		return fmt.Errorf("VEHState 未配置 URL")
 	}
@@ -132,52 +127,81 @@ func (c *VEHStateClient) connectAndServe(ctx context.Context) error {
 		}
 		return err
 	}
+
+	// 成功建立连接，重置退避（由调用者控制），并启动读取协程
+	c.mu.Lock()
 	c.conn = conn
-	defer func() {
-		_ = conn.Close()
-	}()
+	c.mu.Unlock()
 
-	// 设置读取超时、消息大小限制等（按需可扩展）
-	conn.SetReadLimit(1024 * 1024)
+	// 使用 buffered chan 接收读取错误，避免 goroutine 泄漏
+	errCh := make(chan error, 1)
 
-	// 读取循环
-	for {
-		select {
-		case <-ctx.Done():
-			logx.Infof("VEHStateClient context cancelled, closing connection")
-			return nil
-		default:
-		}
+	// 启动读取循环（在独立 goroutine 中运行，确保不会阻塞拨号逻辑）
+	go func() {
+		// 设置读取限制
+		conn.SetReadLimit(1024 * 1024)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				errCh <- fmt.Errorf("读取消息出错: %w", err)
+				return
+			}
 
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("读取消息出错: %w", err)
-		}
+			var resp types.VehicleStateResp
+			if err := json.Unmarshal(msg, &resp); err != nil {
+				// 可能是心跳或其它格式，记录并继续
+				logx.Errorf("解析 VEHState 消息失败: %v, raw=%s", err, string(msg))
+				continue
+			}
 
-		var resp types.VehicleStateResp
-		if err := json.Unmarshal(msg, &resp); err != nil {
-			// 可能是心跳或其它格式，记录并继续
-			logx.Errorf("解析 VEHState 消息失败: %v, raw=%s", err, string(msg))
-			continue
-		}
+			// 期望 code==0 表示成功
+			if resp.Code != 0 {
+				logx.Infof("VEHState 返回 code=%d, message=%s", resp.Code, resp.Message)
+				continue
+			}
 
-		// 期望 code==0 表示成功
-		if resp.Code != 0 {
-			logx.Infof("VEHState 返回 code=%d, message=%s", resp.Code, resp.Message)
-			continue
-		}
+			if resp.Data.VehicleId == "" {
+				// 空数据，跳过
+				continue
+			}
 
-		if resp.Data.VehicleId == "" {
-			// 空数据，跳过
-			continue
-		}
-
-		// 回调上层处理函数（不会阻塞读取，如果处理较慢建议上层异步化）
-		if c.handle != nil {
-			if err := c.handle(&resp.Data); err != nil {
-				logx.Errorf("处理 VEHState 数据出错：%v", err)
+			// 回调上层处理函数（不会阻塞读取，如果处理较慢建议上层异步化）
+			if c.handle != nil {
+				if err := c.handle(&resp.Data); err != nil {
+					logx.Errorf("处理 VEHState 数据出错：%v", err)
+				}
 			}
 		}
+	}()
+
+	// 等待读取错误或上下文取消
+	select {
+	case <-ctx.Done():
+		// 上层取消拨号（超时或主动取消），关闭连接并返回
+		c.closeConn()
+		return ctx.Err()
+	case err := <-errCh:
+		// 读取出错，需要重连
+		c.closeConn()
+		return err
+	}
+}
+
+// Stop 主动关闭客户端
+func (c *VEHStateClient) Stop() {
+	c.closeConn()
+}
+
+func (c *VEHStateClient) closeConn() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+	}
+	select {
+	case <-c.closed:
+		// already closed
+	default:
+		close(c.closed)
 	}
 }
 

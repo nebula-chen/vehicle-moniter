@@ -21,19 +21,20 @@ type FixedHeader struct {
 	Control      byte   `json:"control"`      // 控制内容：包括报文优先级与加密方式两个部分
 }
 
-type OnlineCountResp struct {
-	Count int `json:"count"`
+type OfflinePosition struct {
+	VehicleId string     `json:"vehicleId"`
+	Position  Position2D `json:"position"`
 }
 
 type Position struct {
-	Longitude uint32 `json:"longitude"` // 经度: [0..3600000000]，单位：1e-7°，数据偏移量 180，表示-180.0000000°～180.0000000°，大于 0 表示东经，不可缺省，0xFFFFFFFF 表示异常
-	Latitude  uint32 `json:"latitude"`  // 纬度: [0..1800000000]，单位：1e-7°，数据偏移量 90，表示-90.0000000°～90.0000000°，大于 0 表示北纬，不可缺省，0xFFFFFFFF 表示异常
-	Elevation uint32 `json:"elevation"` // 海拔高度: [0..70000]，单位：dm，数据偏移量5000，表示-5000 dm～65000 dm，0xFFFFFFFF表示缺省
+	Lon       float64 `json:"lon"`       // 经度: [0..3600000000]，单位：1e-7°，数据偏移量 180，表示-180.0000000°～180.0000000°，大于 0 表示东经，不可缺省，0xFFFFFFFF 表示异常
+	Lat       float64 `json:"lat"`       // 纬度: [0..1800000000]，单位：1e-7°，数据偏移量 90，表示-90.0000000°～90.0000000°，大于 0 表示北纬，不可缺省，0xFFFFFFFF 表示异常
+	Elevation float64 `json:"elevation"` // 海拔高度: [0..70000]，单位：dm，数据偏移量5000，表示-5000 dm～65000 dm，0xFFFFFFFF表示缺省
 }
 
 type Position2D struct {
-	Longitude uint32 `json:"longitude"` // 经度: 与 Position.Longitude 相同的表示，单位 1e-7°，数据偏移量 180，0xFFFFFFFF 表示异常或缺省
-	Latitude  uint32 `json:"latitude"`  // 纬度: 与 Position.Latitude 相同的表示，单位 1e-7°，数据偏移量 90，0xFFFFFFFF 表示异常或缺省
+	Lon float64 `json:"lon"` // 经度, 格式如："lon": 106.3229105
+	Lat float64 `json:"lat"` // 纬度, 格式如："lat": 29.5149795
 }
 
 type PositionPoint struct {
@@ -95,13 +96,19 @@ type VehicleInfoReq struct {
 }
 
 type VehicleInfoResp struct {
-	Code    int         `json:"code"`             // 错误码，0 表示成功
-	Message string      `json:"message,optional"` // 非必须, 操作信息
-	Data    VehicleInfo `json:"data"`             // 返回的数据对象
+	Code    int           `json:"code"`             // 错误码，0 表示成功
+	Message string        `json:"message,optional"` // 非必须, 操作信息
+	Data    []VehicleInfo `json:"data"`             // 返回的数据对象
 }
 
 type VehicleListResp struct {
 	Vehicles []VehicleInfo `json:"vehicles"`
+}
+
+type VehicleOnlineResp struct {
+	OnlineCount      int               `json:"onlineCount"`
+	OnlineVehicleIds []string          `json:"onlineVehicleIds,optional"` // 当服务内部调用（用于订阅在线车辆推送）时返回的在线车辆ID列表
+	OfflinePositions []OfflinePosition `json:"offlinePositions,optional"` // 当前端直接调用该接口时，返回不在线车辆的 vehicleId 与经纬度，便于前端展示
 }
 
 type VehicleStateData struct {

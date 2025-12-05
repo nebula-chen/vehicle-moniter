@@ -289,8 +289,8 @@ func (d *MySQLDao) InsertOrUpdateVehicleFromAPI(vehicleInfo *types.VehicleInfo) 
 			(vehicleId, plateNo, categoryCode, categoryName, 
 			vinCode, vehicleFactory, brand, size, autoLevel, 
 			vehicleCert, vehicleInspection, vehicleInvoice, 
-			oilConsumption, certNo, createTime, created_at, updatedTime) 
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+			oilConsumption, certNo, createTime, updatedTime) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
 		_, err := d.DB.Exec(query,
 			vehicleInfo.VehicleId, vehicleInfo.PlateNo, vehicleInfo.CategoryCode, vehicleInfo.CategoryName,
 			vehicleInfo.VinCode, vehicleInfo.VehicleFactory, vehicleInfo.Brand, vehicleInfo.Size, vehicleInfo.AutoLevel,

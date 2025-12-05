@@ -5,9 +5,10 @@ import "github.com/zeromicro/go-zero/rest"
 type Config struct {
 	rest.RestConf
 	InfluxDBConfig InfluxDB
-	MySQL          MySQLConfig    `yaml:"mysql" json:"mysql"`       // MySQL 配置，用于持久化任务记录（任务、统计等）
-	VEHState       VEHStateConfig `yaml:"VEHState" json:"VEHState"` // VEHState 配置，用于连接外部车辆状态API获取实时车辆状态
-	VEHInfo        HttpConfig     `yaml:"VEHInfo" json:"VEHInfo"`   // 车辆信息列表API配置
+	MySQL          MySQLConfig    `yaml:"mysql" json:"mysql"`             // MySQL 配置，用于持久化任务记录（任务、统计等）
+	VEHState       VEHStateConfig `yaml:"VEHState" json:"VEHState"`       // VEHState 配置，用于连接外部车辆状态API获取实时车辆状态
+	VEHInfo        HttpConfig     `yaml:"VEHInfo" json:"VEHInfo"`         // 车辆信息列表API配置
+	VEHPosition    HttpConfig     `yaml:"VEHPosition" json:"VEHPosition"` // 车辆位置在线API配置（用于拉取在线/离线车辆位置信息）
 	// AppId 与 Key 用于对接外部平台的接口鉴权（在 vehicle-api.yaml 中配置）
 	AppId string `yaml:"AppId" json:"AppId"`
 	Key   string `yaml:"Key" json:"Key"`
