@@ -39,22 +39,42 @@ type Position2D struct {
 
 type PositionPoint struct {
 	Timestamp string `json:"timestamp"` // RFC3339 UTC 时间戳
-	Longitude uint32 `json:"longitude"`
-	Latitude  uint32 `json:"latitude"`
+	Longitude int64  `json:"longitude"`
+	Latitude  int64  `json:"latitude"`
 }
 
 type ResultResp struct {
 	Result string `json:"result"`
 }
 
+type Route2TrajectoryResp struct {
+	Code    int          `json:"code"`    // 错误码，0 表示成功
+	Message string       `json:"message"` // 操作信息
+	Data    []Trajectory `json:"data"`
+}
+
+type Trajectory struct {
+	RouteId            string          `json:"routeId"`
+	VehicleId          string          `json:"vehicleId"`
+	Vin                string          `json:"vin"`
+	PlateNo            string          `json:"plateNo"`
+	StartTime          string          `json:"startTime"`
+	EndTime            string          `json:"endTime"`
+	Mileage            float64         `json:"mileage"`
+	DurationTime       float64         `json:"durationTime"`
+	AutoMileage        float64         `json:"autoMileage"`
+	AutoDuration       float64         `json:"autoDuration"`
+	AutoMileageReal    float64         `json:"autoMileageReal"`
+	AutoDurationReal   float64         `json:"autoDurationReal"`
+	VehicleFactory     string          `json:"vehicleFactory"`
+	VehicleFactoryName string          `json:"vehicleFactoryName"`
+	PositionPoints     []PositionPoint `json:"positionPoints"`
+}
+
 type TrajectoryReq struct {
 	VehicleId string `json:"vehicleId"` // 必填
 	StartUtc  string `json:"startUtc"`  // RFC3339 UTC 时间戳, e.g. 2006-01-02T15:04:05Z
 	EndUtc    string `json:"endUtc"`    // RFC3339 UTC 时间戳
-}
-
-type TrajectoryResp struct {
-	Trajectory []PositionPoint `json:"trajectory"`
 }
 
 type UpdateVehicleReq struct {

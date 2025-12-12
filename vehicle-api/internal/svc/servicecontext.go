@@ -253,19 +253,28 @@ func autoMigrate(db *sql.DB) error {
 	}
 
 	// 创建任务记录表和任务轨迹点表
+	// 说明：按要求将任务记录表（`task_records`）字段对照 types.Trajectory（除 PositionPoints），
+	//      轨迹点表（`task_track_points`）字段对照 types.VehicleStateData。
+	//      旧表中与新结构同功能的字段保留并改名为更语义化的列名，其它不再需要的字段已删除。
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS task_records (
 		id INT AUTO_INCREMENT PRIMARY KEY,
-		task_id VARCHAR(128) NOT NULL UNIQUE,
-		vehicle_id VARCHAR(128) NOT NULL,
-		start_time DATETIME NOT NULL,
-		end_time DATETIME,
-		start_lon BIGINT,
-		start_lat BIGINT,
-		end_lon BIGINT,
-		end_lat BIGINT,
-		status VARCHAR(32),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		routeId VARCHAR(128) NOT NULL UNIQUE,
+		vehicleId VARCHAR(128) NOT NULL,
+		vin VARCHAR(128),
+		plateNo VARCHAR(64),
+		startTime DATETIME,
+		endTime DATETIME,
+		mileage DOUBLE,
+		durationTime DOUBLE,
+		autoMileage DOUBLE,
+		autoDuration DOUBLE,
+		autoMileageReal DOUBLE,
+		autoDurationReal DOUBLE,
+		vehicleFactory VARCHAR(256),
+		vehicleFactoryName VARCHAR(256),
+		createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	if err != nil {
@@ -275,13 +284,47 @@ func autoMigrate(db *sql.DB) error {
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS task_track_points (
 		id INT AUTO_INCREMENT PRIMARY KEY,
-		task_id VARCHAR(128) NOT NULL,
-		timestamp DATETIME,
-		longitude BIGINT,
-		latitude BIGINT,
-		velocity INT,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		INDEX idx_task_id (task_id)
+		taskId VARCHAR(128) NOT NULL,
+		vehicleId VARCHAR(128) NOT NULL,
+		categoryCode INT,
+		timestamp BIGINT,
+		lon DOUBLE,
+		lat DOUBLE,
+		speed DOUBLE,
+		heading DOUBLE,
+		driveMode INT,
+		tapPos INT,
+		accelPos DOUBLE,
+		brakeFlag INT,
+		brakePos DOUBLE,
+		fuelConsumption DOUBLE,
+		absFlag INT,
+		tcsFlag INT,
+		espFlag INT,
+		lkaFlag INT,
+		accMode INT,
+		fcwFlag INT,
+		ldwFlag INT,
+		aebFlag INT,
+		lcaFlag INT,
+		dmsFlag INT,
+		soc DOUBLE,
+		mileage DOUBLE,
+		accelerationH DOUBLE,
+		accelerationV DOUBLE,
+		lowBeam INT,
+		highBeam INT,
+		leftTurn INT,
+		rightTurn INT,
+		hazardSignal INT,
+		automatic INT,
+		daytimeRunning INT,
+		fogLight INT,
+		parking INT,
+		vehFault JSON,
+		doors JSON,
+		INDEX idx_task_id (taskId),
+		INDEX idx_vehicle_ts (vehicleId, timestamp)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	if err != nil {

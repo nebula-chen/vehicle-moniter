@@ -94,12 +94,32 @@ type TrajectoryReq {
 
 type PositionPoint {
 	Timestamp string `json:"timestamp"` // RFC3339 UTC 时间戳
-	Longitude uint32 `json:"longitude"`
-	Latitude  uint32 `json:"latitude"`
+	Longitude int64  `json:"longitude"`
+	Latitude  int64  `json:"latitude"`
 }
 
-type TrajectoryResp {
-	Trajectory []PositionPoint `json:"trajectory"`
+type Trajectory {
+	RouteId            string          `json:"routeId"`
+	VehicleId          string          `json:"vehicleId"`
+	Vin                string          `json:"vin"`
+	PlateNo            string          `json:"plateNo"`
+	StartTime          string          `json:"startTime"`
+	EndTime            string          `json:"endTime"`
+	Mileage            float64         `json:"mileage"`
+	DurationTime       float64         `json:"durationTime"`
+	AutoMileage        float64         `json:"autoMileage"`
+	AutoDuration       float64         `json:"autoDuration"`
+	AutoMileageReal    float64         `json:"autoMileageReal"`
+	AutoDurationReal   float64         `json:"autoDurationReal"`
+	VehicleFactory     string          `json:"vehicleFactory"`
+	VehicleFactoryName string          `json:"vehicleFactoryName"`
+	PositionPoints     []PositionPoint `json:"positionPoints"`
+}
+
+type Route2TrajectoryResp {
+	Code    int          `json:"code"` // 错误码，0 表示成功
+	Message string       `json:"message"` // 操作信息
+	Data    []Trajectory `json:"data"`
 }
 
 type VehicleInfo {
@@ -175,7 +195,7 @@ service vehicle-api {
 	get /api/vehicle/online returns (VehicleOnlineResp)
 
 	@handler HandleGetTrajectory
-	post /api/vehicle/gettrajectory (TrajectoryReq) returns (TrajectoryResp)
+	post /api/vehicle/gettrajectory (TrajectoryReq) returns (Route2TrajectoryResp)
 
 	@handler HandleGetVehicle
 	get /api/vehicles/detail (string) returns (VehicleDetailResp)

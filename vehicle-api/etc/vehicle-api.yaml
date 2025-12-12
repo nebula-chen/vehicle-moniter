@@ -33,4 +33,13 @@ VEHState:
   sampleIntervalMs: 1000
 
 VEHInfo:
-  url: "http://119.84.241.37:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/getAllList"  # 车辆信息列表API URL
+  url: "http://119.84.241.37:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/getAllList"   # 车辆信息列表API URL
+
+VEHPosition:
+  url: "http://119.84.241.37:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/position"     # 车辆位置在线API URL
+
+VEHTrajectory:
+  url: "http://192.168.1.103:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/getRunpath"  # 车辆轨迹API URL（已改为 http 以匹配本地模拟服务）
+
+VEHRoute:
+  url: "http://192.168.1.103:34035/infraCloud/openapi/regionCloud/v1/api/base/vehicle/getRoutePage"  # 车辆行程获取API URL

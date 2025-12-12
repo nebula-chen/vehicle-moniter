@@ -60,10 +60,9 @@ func (c *VEHStateClient) Start(ctx context.Context) {
 		default:
 		}
 
-		// 使用短超时的 context 来拨号，避免 Dial 被长期阻塞
-		dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := c.dialAndServe(dialCtx)
-		cancel()
+		// 将拨号超时局部化到 dialAndServe 内部，避免把短超时 ctx 用于读循环。
+		// 这里传入的是父 ctx（由外层控制生命周期），dialAndServe 会在内部为拨号创建短超时 ctx。
+		err := c.dialAndServe(ctx)
 
 		if err != nil {
 			// 记录错误并按照指数退避重试
@@ -115,12 +114,16 @@ func (c *VEHStateClient) dialAndServe(ctx context.Context) error {
 	q.Set("sign", sign)
 	u.RawQuery = q.Encode()
 
+	// 为拨号单独使用短超时的 context，拨号成功后不要使用该短超时 ctx 去控制读循环。
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	headers := http.Header{}
 	headers.Set("X-Auth-Type", "sign")
 
 	logx.Infof("正在拨号连接外部 VEHState WebSocket：%s", u.String())
-	conn, resp, err := dialer.DialContext(ctx, u.String(), headers)
+	conn, resp, err := dialer.DialContext(dialCtx, u.String(), headers)
 	if err != nil {
 		if resp != nil {
 			logx.Errorf("VEHState 握手失败 HTTP 状态：%s", resp.Status)
@@ -174,10 +177,11 @@ func (c *VEHStateClient) dialAndServe(ctx context.Context) error {
 		}
 	}()
 
-	// 等待读取错误或上下文取消
+	// 等待读取错误或父级 ctx 取消（由 Start 的 ctx 控制）。注意这里使用传入的 ctx
+	//（它是 Start 的原始 ctx），而不是用于拨号的短超时 ctx。
 	select {
 	case <-ctx.Done():
-		// 上层取消拨号（超时或主动取消），关闭连接并返回
+		// 上层取消（主动退出），关闭连接并返回
 		c.closeConn()
 		return ctx.Err()
 	case err := <-errCh:

@@ -191,6 +191,128 @@ func (d *MySQLDao) ListVehicles() ([]types.VehicleInfo, error) {
 	return out, nil
 }
 
+// SaveTrajectoryAndPoints 保存单条 Trajectory（task_records）以及其 PositionPoints 到 task_track_points。
+// 行为说明（中文）：
+// - 根据传入的 types.Trajectory 的 RouteId 执行 upsert（存在则更新）到 `task_records`。
+// - 清理该 routeId 在 `task_track_points` 中的旧轨迹点（避免重复），然后批量插入新的轨迹点。
+// - PositionPoint 中的 Longitude/Latitude 为 int64（已乘 1e7），此处会转换为浮点经纬度（除以 1e7）。
+// - PositionPoint.Timestamp 为 RFC3339 字符串，转换为毫秒时间戳（BIGINT 存储）。
+// - 所有数据库操作在一个事务中完成，发生错误时回滚。
+func (d *MySQLDao) SaveTrajectoryAndPoints(traj *types.Trajectory) error {
+	if d == nil || d.DB == nil {
+		return fmt.Errorf("mysql dao not initialized")
+	}
+	if traj == nil {
+		return fmt.Errorf("trajectory is nil")
+	}
+
+	tx, err := d.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// 解析 start/end 时间（RFC3339），如果解析失败则使用 NULL
+	var startTime interface{} = nil
+	var endTime interface{} = nil
+	if traj.StartTime != "" {
+		if t, e := time.Parse(time.RFC3339, traj.StartTime); e == nil {
+			startTime = t
+		}
+	}
+	if traj.EndTime != "" {
+		if t, e := time.Parse(time.RFC3339, traj.EndTime); e == nil {
+			endTime = t
+		}
+	}
+
+	// upsert 到 task_records（使用 routeId 作为唯一键，表中列名为 camelCase）
+	upsertStmt := `INSERT INTO task_records (
+		routeId, vehicleId, vin, plateNo, startTime, endTime,
+		mileage, durationTime, autoMileage, autoDuration,
+		autoMileageReal, autoDurationReal, vehicleFactory, vehicleFactoryName
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON DUPLICATE KEY UPDATE
+		vehicleId=VALUES(vehicleId), vin=VALUES(vin), plateNo=VALUES(plateNo),
+		startTime=VALUES(startTime), endTime=VALUES(endTime),
+		mileage=VALUES(mileage), durationTime=VALUES(durationTime),
+		autoMileage=VALUES(autoMileage), autoDuration=VALUES(autoDuration),
+		autoMileageReal=VALUES(autoMileageReal), autoDurationReal=VALUES(autoDurationReal),
+		vehicleFactory=VALUES(vehicleFactory), vehicleFactoryName=VALUES(vehicleFactoryName),
+		updatedAt=CURRENT_TIMESTAMP`
+
+	if _, err = tx.Exec(upsertStmt,
+		traj.RouteId, traj.VehicleId, traj.Vin, traj.PlateNo, startTime, endTime,
+		traj.Mileage, traj.DurationTime, traj.AutoMileage, traj.AutoDuration,
+		traj.AutoMileageReal, traj.AutoDurationReal, traj.VehicleFactory, traj.VehicleFactoryName); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 清理旧轨迹点，防止重复写入（如果希望保留历史，可去掉这一步）
+	if _, err = tx.Exec(`DELETE FROM task_track_points WHERE taskId = ?`, traj.RouteId); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 批量插入轨迹点（仅包含可用字段：task_id, vehicle_id, ts, lon, lat）
+	if len(traj.PositionPoints) > 0 {
+		// 由于表结构使用 camelCase，且 task_track_points 中没有 created_at 字段（按 autoMigrate 中定义），
+		// 我们只插入存在的列：taskId, vehicleId, `timestamp`, lon, lat
+		query := `INSERT INTO task_track_points (taskId, vehicleId, ` + "`timestamp`" + `, lon, lat) VALUES `
+		vals := []interface{}{}
+		for _, p := range traj.PositionPoints {
+			// 解析 timestamp（RFC3339），若解析失败则跳过该点
+			var tsMs int64 = 0
+			if p.Timestamp != "" {
+				if t, e := time.Parse(time.RFC3339, p.Timestamp); e == nil {
+					tsMs = t.UnixNano() / int64(time.Millisecond)
+				} else {
+					// 尝试解析可能带时区偏移的时间
+					if t2, e2 := time.Parse("2006-01-02T15:04:05.000Z07:00", p.Timestamp); e2 == nil {
+						tsMs = t2.UnixNano() / int64(time.Millisecond)
+					}
+				}
+			}
+			if tsMs == 0 {
+				// 如果没有可用时间戳则使用 NULL（存入 0）
+				// 这里我们仍然写入记录，但 ts 字段为 0
+			}
+			// Longitude/Latitude 存储为 int64 (1e7)，转换为度
+			lon := float64(p.Longitude) / 1e7
+			lat := float64(p.Latitude) / 1e7
+			query += `(?, ?, ?, ?, ?),`
+			vals = append(vals, traj.RouteId, traj.VehicleId, tsMs, lon, lat)
+		}
+		// 去掉尾部逗号
+		query = query[:len(query)-1]
+		if _, err = tx.Exec(query, vals...); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// SaveTrajectories 批量保存多条 Trajectory（对每条调用 SaveTrajectoryAndPoints）
+// 说明：简单实现，逐条在事务中保存；如果需要更高性能可改为跨多条的单次事务与更复杂的批量 SQL。
+func (d *MySQLDao) SaveTrajectories(trajs []types.Trajectory) error {
+	if d == nil || d.DB == nil {
+		return fmt.Errorf("mysql dao not initialized")
+	}
+	for i := range trajs {
+		if err := d.SaveTrajectoryAndPoints(&trajs[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SaveTaskAndPoints 保存一次任务记录及其轨迹点（在事务中）
 func (d *MySQLDao) SaveTaskAndPoints(task struct {
 	TaskId    string

@@ -127,16 +127,16 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 	for result.Next() {
 		rec := result.Record()
 		// 值可能是 float64 或 int64，取决于写入类型
-		var lon uint32
-		var lat uint32
+		var lon int64
+		var lat int64
 		if v := rec.ValueByKey("longitude"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				lon = uint32(t)
+				lon = t
 			case float64:
-				lon = uint32(t)
+				lon = int64(t)
 			case uint64:
-				lon = uint32(t)
+				lon = int64(t)
 			default:
 				lon = 0
 			}
@@ -144,11 +144,11 @@ func (d *InfluxDao) QueryPositions(vehicleId string, start time.Time, end time.T
 		if v := rec.ValueByKey("latitude"); v != nil {
 			switch t := v.(type) {
 			case int64:
-				lat = uint32(t)
+				lat = t
 			case float64:
-				lat = uint32(t)
+				lat = int64(t)
 			case uint64:
-				lat = uint32(t)
+				lat = int64(t)
 			default:
 				lat = 0
 			}
