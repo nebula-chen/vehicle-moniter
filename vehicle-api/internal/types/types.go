@@ -12,6 +12,22 @@ type CreateVehicleReq struct {
 	Extra         string `json:"extra,optional"`       // 可选扩展字段
 }
 
+type DispatchReq struct {
+	OrderId     string     `json:"orderId"`              // 订单编号
+	Pickup      Position2D `json:"pickup"`               // 取货点经纬度
+	Destination Position2D `json:"destination"`          // 目的地经纬度
+	PackageType int        `json:"packageType,optional"` // 可选，货物类别，以便车端服务选择相应类型的车辆进行配送，普通:0，冷藏:1,冷冻:2
+	Weight      int        `json:"weight,optional"`      // 可选，货物重量，单位 kg ，精确到小数点后1位，乘十后传输
+}
+
+type DispatchResp struct {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	TaskId    string `json:"taskId"`
+	VehicleId string `json:"vehicleId"`
+	Status    int    `json:"status"`
+}
+
 type FixedHeader struct {
 	StartByte    byte   `json:"startByte"`    // 标识位：固定为 0xF2
 	DataLength   uint32 `json:"dataLength"`   // 数据段长度：[0..4294967296]，表示当前报文中数据段内容所占字节数，单位：字节，最多描述 4GB 数据

@@ -26,8 +26,10 @@ func HandleWebSocketHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
+		// 从查询参数读取可选的 serviceId，用于定向广播
+		svcId := r.URL.Query().Get("serviceId")
 		// 创建 client 并注册到 hub
-		client := &ws.Client{Conn: conn, Send: make(chan []byte, 256)}
+		client := &ws.Client{Conn: conn, Send: make(chan []byte, 256), ServiceId: svcId}
 		svcCtx.WSHub.Register <- client
 
 		// 启动写读协程：写协程负责把 hub.Broadcast 的消息写回客户端，读协程用于处理客户端消息（目前仅打印）

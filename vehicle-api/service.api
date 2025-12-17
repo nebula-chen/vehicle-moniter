@@ -187,6 +187,22 @@ type VehicleDetailResp {
 	Extra   map[string]string `json:"extra,omitempty"`
 }
 
+type DispatchReq {
+	OrderId     string     `json:"orderId"` // 订单编号
+	Pickup      Position2D `json:"pickup"` // 取货点经纬度
+	Destination Position2D `json:"destination"` // 目的地经纬度
+	PackageType int        `json:"packageType,optional"` // 可选，货物类别，以便车端服务选择相应类型的车辆进行配送，普通:0，冷藏:1,冷冻:2
+	Weight      int        `json:"weight,optional"` // 可选，货物重量，单位 kg ，精确到小数点后1位，乘十后传输
+}
+
+type DispatchResp {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	TaskId    string `json:"taskId"`
+	VehicleId string `json:"vehicleId"`
+	Status    int    `json:"status"`
+}
+
 service vehicle-api {
 	@handler HandleWebSocket
 	get /api/vehicle/ws
@@ -208,5 +224,8 @@ service vehicle-api {
 
 	@handler HandleListVehicles
 	get /api/vehicles/infolist returns (VehicleListResp)
+
+	@handler VehicleDispatch
+	post /api/vehicle/dispatch (DispatchReq) returns (DispatchResp)
 }
 

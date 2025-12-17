@@ -16,6 +16,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 		[]rest.Route{
 			{
 				Method:  http.MethodPost,
+				Path:    "/api/vehicle/dispatch",
+				Handler: VehicleDispatchHandler(serverCtx),
+			},
+			{
+				Method:  http.MethodPost,
 				Path:    "/api/vehicle/gettrajectory",
 				Handler: HandleGetTrajectoryHandler(serverCtx),
 			},

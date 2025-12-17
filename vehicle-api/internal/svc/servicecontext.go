@@ -20,19 +20,19 @@ import (
 )
 
 type ServiceContext struct {
-	Config         config.Config
-	WSHub          *websocket.Hub
-	Dao            *dao.InfluxDao
-	Processor      *processor.Processor
-	MySQLDB        *sql.DB
-	MySQLDao       *dao.MySQLDao
-	VEHInfoClient  *apiclient.VEHInfoClient
-	VEHStateClient *apiclient.VEHStateClient
-	OnlineDrones   sync.Map // key: uasID, value: time.Time
-	// VehicleLastProcessed: 跟踪每辆车上一次被处理的时间戳（毫秒），用于实现接收端的降频/采样，避免高频数据导致处理阻塞。
-	VehicleLastProcessed sync.Map // key: vehicleId string, value: int64 (unix ms)
-	// vehInfoStop 用于停止定时拉取车辆信息的后台协程
-	vehInfoStop chan struct{}
+	Config               config.Config
+	WSHub                *websocket.Hub
+	Dao                  *dao.InfluxDao
+	Processor            *processor.Processor
+	MySQLDB              *sql.DB
+	MySQLDao             *dao.MySQLDao
+	VEHInfoClient        *apiclient.VEHInfoClient
+	VEHStateClient       *apiclient.VEHStateClient
+	OnlineDrones         sync.Map                     // key: uasID, value: time.Time
+	VehicleLastProcessed sync.Map                     // 跟踪每辆车上一次被处理的时间戳（毫秒）, 进行反向降频, key: vehicleId string, value: int64 (unix ms)
+	vehInfoStop          chan struct{}                // vehInfoStop 用于停止定时拉取车辆信息的后台协程
+	VehicleEventChan     chan *types.VehicleStateData // VehicleEventChan 用于接收来自 VEHState 客户端（或外部平台）的车辆状态事件
+	TaskMonitor          *TaskMonitor                 // 任务监控器：用于根据车辆位置生成 task 级别的到达事件并推送给 orders
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -54,6 +54,36 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		WSHub:  hub,
 		Dao:    dao.NewInfluxDao(client, c.InfluxDBConfig.Org, c.InfluxDBConfig.Bucket),
 	}
+
+	// 初始化车辆事件通道，用于把外部平台或 VEHState 客户端的状态事件分发到内部消费者
+	ctx.VehicleEventChan = make(chan *types.VehicleStateData, 1024)
+
+	// 启动事件分发器：从 VehicleEventChan 读取事件并广播到 websocket 客户端
+	go func() {
+		for ev := range ctx.VehicleEventChan {
+			if ev == nil {
+				continue
+			}
+			b, err := json.Marshal(ev)
+			if err != nil {
+				logx.Errorf("marshal vehicle event failed: %v", err)
+				continue
+			}
+			// 广播到所有 websocket 客户端
+			if ctx.WSHub != nil {
+				select {
+				case ctx.WSHub.Broadcast <- b:
+				default:
+					// 如果 Broadcast 通道阻塞则进行定向广播，避免阻塞调度
+					ctx.WSHub.BroadcastToService("orders", b)
+				}
+			}
+		}
+	}()
+
+	// 初始化 TaskMonitor：监听 VehicleEventChan，并在车辆接近任务的取货点/目的地时生成事件推送给 orders
+	// 默认阈值使用 10m，可后续改为从配置读取
+	ctx.TaskMonitor = NewTaskMonitor(context.Background(), hub, 10.0, ctx.VehicleEventChan)
 
 	// 初始化 Processor，用于异步批量写入 Influx
 	// batchSize 使用 InfluxDB 配置的 BatchSize（若为0则使用默认值），flushInterval 使用配置的秒数
@@ -128,6 +158,16 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 				// 更新为本次处理时间
 				ctx.VehicleLastProcessed.Store(data.VehicleId, nowMs)
+
+				// 将数据推送到 VehicleEventChan，供内部组件（例如 dispatch 逻辑或 web 推送）订阅处理。
+				// 使用非阻塞发送以避免阻塞上游客户端连接。
+				if ctx.VehicleEventChan != nil {
+					select {
+					case ctx.VehicleEventChan <- data:
+					default:
+						// 通道已满，丢弃以保障吞吐（可在未来改为回压或持久化）
+					}
+				}
 
 				// 这里为实际处理逻辑入口：优先把数据投递到 Processor 队列以异步批量写入 Influx。
 				// 如果 Processor 未初始化则回退到记录日志。
@@ -408,5 +448,69 @@ func (sc *ServiceContext) Close() {
 	if sc.vehInfoStop != nil {
 		close(sc.vehInfoStop)
 		logx.Infof("车辆信息定时拉取已停止")
+	}
+
+	// 停止 TaskMonitor
+	if sc.TaskMonitor != nil {
+		sc.TaskMonitor.Stop()
+		logx.Infof("TaskMonitor 已停止")
+	}
+}
+
+// RegisterTaskForMonitor 注册一个需要监控到达事件的任务（由上层派单调用）
+func (sc *ServiceContext) RegisterTaskForMonitor(taskId, orderId string, pickup, dest types.Position2D, assignedVehicleId string) {
+	if sc.TaskMonitor == nil {
+		return
+	}
+	ti := &TaskInfo{
+		TaskId:          taskId,
+		OrderId:         orderId,
+		Pickup:          pickup,
+		Destination:     dest,
+		AssignedVehicle: assignedVehicleId,
+	}
+	sc.TaskMonitor.Register(ti)
+}
+
+// AssignVehicleToTask 将 vehicleId 关联到已有任务
+func (sc *ServiceContext) AssignVehicleToTask(taskId, vehicleId string) {
+	if sc.TaskMonitor == nil {
+		return
+	}
+	sc.TaskMonitor.AssignVehicle(taskId, vehicleId)
+}
+
+// UnregisterTaskFromMonitor 注销任务监控
+func (sc *ServiceContext) UnregisterTaskFromMonitor(taskId string) {
+	if sc.TaskMonitor == nil {
+		return
+	}
+	sc.TaskMonitor.Unregister(taskId)
+}
+
+// ProcessVehicleState 处理标准化后的车辆状态数据。
+// 该方法用于内部处理流程（例如 HTTP 推送解析后、或外部平台回调处理后）将数据统一传入系统：
+// 1) 非阻塞地把事件发送到 VehicleEventChan，供事件分发器广播到 websocket 客户端；
+// 2) 将数据交给 Processor 入队，用于批量写入 Influx 并触发实时 hub 广播。
+func (sc *ServiceContext) ProcessVehicleState(data *types.VehicleStateData) {
+	if data == nil {
+		return
+	}
+
+	// 1) 发送到事件通道（非阻塞）
+	if sc.VehicleEventChan != nil {
+		select {
+		case sc.VehicleEventChan <- data:
+		default:
+			// 通道已满：记录但继续，不阻塞调用方
+			logx.Infof("VehicleEventChan 已满，丢弃事件 vehicleId=%s ts=%d", data.VehicleId, data.Timestamp)
+		}
+	}
+
+	// 2) 交给 Processor 进行批量处理（写入 Influx & Hub 广播）
+	if sc.Processor != nil {
+		if err := sc.Processor.Enqueue(data); err != nil {
+			logx.Errorf("Processor 入队失败 vehicleId=%s err=%v", data.VehicleId, err)
+		}
 	}
 }
